@@ -7,6 +7,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// TABELA LEADS
 model Lead {
   id             String  @id @default(uuid())
   code           String  @unique
@@ -17,25 +18,72 @@ model Lead {
   classification String?
   status         String  @default("NEW")
   notes          String?
-  
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   client    Client?
 }
 
+// TABELA CLIENTES
 model Client {
   id      String  @id @default(uuid())
-  code   String @unique
+  code    String  @unique
   name    String
   email   String?
   phone   String
   cpfCnpj String?
   address String?
 
-  leadId String? @unique
-  lead   Lead?   @relation(fields: [leadId], references: [id])
+  leadId    String?   @unique
+  lead      Lead?     @relation(fields: [leadId], references: [id])
+  processes Process[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// TABELA DE PROCESSOS
+
+model Process {
+  id     String @id @default(uuid())
+  code   String @unique
+  number String @unique
+  title  String
+  area   String
+  status String
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  courtId String?
+  court   Court?  @relation(fields: [courtId], references: [id])
+
+  events ProcessEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// TABELA DE TRIBUNAL
+
+model Court {
+  id     String  @id @default(uuid())
+  name   String
+  state  String
+  system String?
+
+  processes Process[]
+}
+
+// TABELA DE EVENTOS DO PROCESSO (HISTÓRICO)
+
+model ProcessEvent {
+  id          String   @id @default(uuid())
+  description String
+  date        DateTime
+
+  processId String
+  process   Process @relation(fields: [processId], references: [id])
+
+  createdAt DateTime @default(now())
 }
