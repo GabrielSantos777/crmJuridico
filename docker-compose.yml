@@ -1,0 +1,62 @@
+services:
+
+  backend:
+    build: ./backend
+    container_name: crmjuridico_backend
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    env_file:
+      - ./backend/.env
+
+  frontend:
+    build: ./frontend
+    container_name: crmjuridico_frontend
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev -- -H 0.0.0.0
+
+  db:
+    image: postgres:15
+    container_name: crmjuridico_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: crmjuridico
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    container_name: crmjuridico_redis
+    ports:
+      - "6379:6379"
+
+  n8n:
+    image: n8nio/n8n
+    container_name: crmjuridico_n8n
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  postgres_data:
+  n8n_data:
