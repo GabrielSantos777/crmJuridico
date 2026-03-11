@@ -7,6 +7,28 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// TABELA USUÁRIOS
+model User {
+  id String @id @default(uuid())
+
+  name     String
+  email    String @unique
+  password String
+
+  role UserRole @default(UNASSIGNED)
+
+  createdAt DateTime @default(now())
+
+  memberships GroupMember[]
+}
+
+enum UserRole {
+  ADMIN
+  LAWYER
+  BASIC
+  UNASSIGNED
+}
+
 // TABELA LEADS
 model Lead {
   id             String  @id @default(uuid())
@@ -14,6 +36,7 @@ model Lead {
   name           String
   email          String?
   phone          String
+  phoneNormalized String?
   source         String?
   classification String?
   status         String  @default("NEW")
@@ -22,6 +45,8 @@ model Lead {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   client    Client?
+  conversations Conversation[]
+  appointments  Appointment[]
 }
 
 // TABELA CLIENTES
@@ -31,8 +56,10 @@ model Client {
   name    String
   email   String?
   phone   String
+  phoneNormalized String?
   cpfCnpj String?
   address String?
+  status  ClientStatus @default(ACTIVE)
 
   leadId    String?   @unique
   lead      Lead?     @relation(fields: [leadId], references: [id])
@@ -40,6 +67,14 @@ model Client {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  conversations Conversation[]
+  appointments  Appointment[]
+  files          ClientFile[]
+}
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
 }
 
 // TABELA DE PROCESSOS
@@ -58,7 +93,8 @@ model Process {
   courtId String?
   court   Court?  @relation(fields: [courtId], references: [id])
 
-  events ProcessEvent[]
+  events         ProcessEvent[]
+  legalDeadlines LegalDeadline[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -84,6 +120,238 @@ model ProcessEvent {
 
   processId String
   process   Process @relation(fields: [processId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+enum ConversationStatus {
+  OPEN
+  CLOSED
+}
+
+enum MessageDirection {
+  IN
+  OUT
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+  AVAILABLE
+}
+
+enum AppointmentType {
+  CONSULTATION
+  AUDIENCE
+  DOCUMENT
+  MEETING
+  OTHER
+}
+
+enum AppointmentMode {
+  ONLINE
+  IN_PERSON
+}
+
+model Conversation {
+  id String @id @default(uuid())
+
+  channel String @default("WHATSAPP")
+  phone   String
+  name    String?
+
+  leadId String?
+  lead   Lead? @relation(fields: [leadId], references: [id])
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id])
+
+  status        ConversationStatus @default(OPEN)
+  lastMessageAt DateTime?
+
+  messages  Message[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([channel, phone])
+}
+
+model Message {
+  id String @id @default(uuid())
+
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
+  direction MessageDirection
+  text      String
+  meta      Json?
+
+  createdAt DateTime @default(now())
+}
+
+model Appointment {
+  id String @id @default(uuid())
+
+  title       String
+  description String?
+  type        AppointmentType @default(CONSULTATION)
+  mode        AppointmentMode @default(ONLINE)
+  startAt     DateTime
+  endAt       DateTime
+  status      AppointmentStatus @default(SCHEDULED)
+
+  channel String?
+  phone   String?
+  location String?
+  notes    String?
+
+  externalSource String?
+  externalId     String?
+
+  leadId String?
+  lead   Lead? @relation(fields: [leadId], references: [id])
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([startAt, endAt])
+  @@unique([externalSource, externalId])
+}
+
+model ClientFile {
+  id String @id @default(uuid())
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  filename     String
+  originalName String
+  mimeType     String
+  size         Int
+  storagePath  String
+
+  createdAt DateTime @default(now())
+}
+
+model OfficeSettings {
+  id String @id @default("office")
+
+  name    String
+  cnpj    String
+  address String
+  phone   String
+  email   String
+  logoUrl String?
+
+  workingHours Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Notification {
+  id String @id @default(uuid())
+
+  type  String
+  title String
+  body  String?
+  link  String?
+
+  readAt DateTime?
+
+  createdAt DateTime @default(now())
+}
+
+model KanbanColumn {
+  id String @id @default(uuid())
+
+  title String
+  order Int
+
+  externalId String?
+
+  cards KanbanCard[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model KanbanCard {
+  id String @id @default(uuid())
+
+  columnId String
+  column   KanbanColumn @relation(fields: [columnId], references: [id])
+
+  title       String
+  description String?
+  order       Int
+
+  externalId String?
+  dueAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Group {
+  id String @id @default(uuid())
+
+  name String
+  role UserRole
+
+  members GroupMember[]
+  invites GroupInvite[]
+
+  createdAt DateTime @default(now())
+}
+
+model GroupMember {
+  id String @id @default(uuid())
+
+  userId  String
+  groupId String
+
+  user  User  @relation(fields: [userId], references: [id])
+  group Group @relation(fields: [groupId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, groupId])
+}
+
+model GroupInvite {
+  id String @id @default(uuid())
+
+  email   String
+  groupId String
+
+  group Group @relation(fields: [groupId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([email, groupId])
+}
+
+// PRAZO JURIDICO
+model LegalDeadline {
+  id String @id @default(uuid())
+
+  title       String
+  description String?
+
+  startDate DateTime
+  dueDate   DateTime
+
+  status String @default("PENDING")
+
+  processId String
+  process   Process @relation(fields: [processId], references: [id])
+
+  trelloCardId String?
 
   createdAt DateTime @default(now())
 }

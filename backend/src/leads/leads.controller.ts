@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Delete,
+  Query,
 } from '@nestjs/common';
 import { LeadsService } from './leads.service';
 import { CreateLeadDto } from './dto/create-lead.dto';
@@ -21,8 +22,8 @@ export class LeadsController {
   }
 
   @Get()
-  findAll() {
-    return this.leadsService.findAll();
+  findAll(@Query('q') q?: string) {
+    return this.leadsService.findAll(q);
   }
 
   @Get(':id')

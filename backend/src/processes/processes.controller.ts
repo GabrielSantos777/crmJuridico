@@ -10,17 +10,31 @@ export class ProcessesController {
     return this.processesService.create(data);
   }
 
-  @Post(':id/events')
-  addEvent(@Param('id') id: string, @Body('description') description: string) {
-    return this.processesService.addEvent(id, description);
+  @Post(':code/events')
+  addEvent(
+    @Param('code') code: string,
+    @Body('description') description: string,
+  ) {
+    return this.processesService.addEvent(code, description);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.processesService.findOne(id);
-  }
   @Get()
   findAll() {
     return this.processesService.findAll();
+  }
+
+  @Get('cnj/:number')
+  async getFromCNJ(@Param('number') number: string) {
+    return this.processesService.syncFromCNJ(number);
+  }
+
+  @Post('import')
+  importFromCnj(@Body() body: { number: string; clientCode: string }) {
+    return this.processesService.importFromCNJ(body.number, body.clientCode);
+  }
+
+  @Get(':code')
+  findOne(@Param('code') code: string) {
+    return this.processesService.findOne(code);
   }
 }
