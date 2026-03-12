@@ -19,7 +19,7 @@ async function bootstrap() {
   });
 
   const usersService = app.get(UsersService);
-  await usersService.ensureAdmin();
+  await usersService.ensureSuperAdmin();
 
   await app.listen(3000, '0.0.0.0');
 }

@@ -8,11 +8,11 @@ export class ProcessesService {
 
   private cnj = new CNJService();
 
-  async syncFromCNJ(number: string) {
+  async syncFromCNJ(number: string, officeId: string) {
     const data = await this.cnj.getProcess(number);
 
     const process = await this.prisma.process.findFirst({
-      where: { number },
+      where: { number, officeId },
     });
 
     if (!process) return data;
@@ -30,13 +30,13 @@ export class ProcessesService {
     return data;
   }
 
-  async importFromCNJ(number: string, clientCode: string) {
+  async importFromCNJ(number: string, clientCode: string, officeId: string) {
     const data = await this.cnj.getProcess(number);
-    const client = await this.prisma.client.findUnique({ where: { code: clientCode } });
+    const client = await this.prisma.client.findFirst({ where: { code: clientCode, officeId } });
     if (!client) {
       throw new Error('Cliente nÃ£o encontrado');
     }
-    const existing = await this.prisma.process.findFirst({ where: { number } });
+    const existing = await this.prisma.process.findFirst({ where: { number, officeId } });
     if (existing) return existing;
 
     const count = await this.prisma.process.count();
@@ -50,6 +50,7 @@ export class ProcessesService {
         area: data?.area || 'N/A',
         status: data?.status || 'Em andamento',
         clientId: client.id,
+        officeId,
       },
     });
 
@@ -68,10 +69,10 @@ export class ProcessesService {
     return process;
   }
 
-  async create(data: any) {
+  async create(data: any, officeId: string) {
     // procurar cliente pelo CODE
-    const client = await this.prisma.client.findUnique({
-      where: { code: data.clientCode },
+    const client = await this.prisma.client.findFirst({
+      where: { code: data.clientCode, officeId },
     });
 
     if (!client) {
@@ -92,13 +93,14 @@ export class ProcessesService {
         area: data.area,
         status: data.status,
         clientId: client.id, // usa o ID real do cliente
+        officeId,
       },
     });
   }
 
-  async addEvent(code: string, description: string) {
-    const process = await this.prisma.process.findUnique({
-      where: { code },
+  async addEvent(code: string, description: string, officeId: string) {
+    const process = await this.prisma.process.findFirst({
+      where: { code, officeId },
     });
 
     if (!process) {
@@ -114,8 +116,9 @@ export class ProcessesService {
     });
   }
 
-  async findAll() {
+  async findAll(officeId: string) {
     return this.prisma.process.findMany({
+      where: { officeId },
       include: {
         client: true,
         court: true,
@@ -124,9 +127,9 @@ export class ProcessesService {
     });
   }
 
-  async findOne(code: string) {
-    return this.prisma.process.findUnique({
-      where: { code },
+  async findOne(code: string, officeId: string) {
+    return this.prisma.process.findFirst({
+      where: { code, officeId },
       include: {
         client: true,
         court: true,

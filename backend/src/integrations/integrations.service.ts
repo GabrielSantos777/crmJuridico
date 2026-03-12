@@ -12,16 +12,24 @@ export class IntegrationsService {
     return phone ? phone.replace(/\D/g, '') : undefined;
   }
 
-  async findClientOrLeadByPhone(phone: string) {
+  private requireOfficeId(officeId?: string) {
+    if (!officeId) {
+      throw new Error('officeId obrigatorio');
+    }
+    return officeId;
+  }
+
+  async findClientOrLeadByPhone(phone: string, officeId: string) {
+    this.requireOfficeId(officeId);
     const normalized = this.normalizePhone(phone);
 
     const client =
       (normalized &&
         (await this.prisma.client.findFirst({
-          where: { phoneNormalized: normalized },
+          where: { phoneNormalized: normalized, officeId },
         }))) ||
       (await this.prisma.client.findFirst({
-        where: { phone },
+        where: { phone, officeId },
       }));
 
     if (client) return { type: 'client', record: client };
@@ -29,10 +37,10 @@ export class IntegrationsService {
     const lead =
       (normalized &&
         (await this.prisma.lead.findFirst({
-          where: { phoneNormalized: normalized },
+          where: { phoneNormalized: normalized, officeId },
         }))) ||
       (await this.prisma.lead.findFirst({
-        where: { phone },
+        where: { phone, officeId },
       }));
 
     if (lead) return { type: 'lead', record: lead };
@@ -40,14 +48,15 @@ export class IntegrationsService {
     return null;
   }
 
-  async registerWhatsappMessage(data: WhatsappMessageDto) {
+  async registerWhatsappMessage(data: WhatsappMessageDto, officeId: string) {
+    officeId = this.requireOfficeId(officeId);
     const normalized = this.normalizePhone(data.phone);
     const direction = data.direction ?? 'IN';
 
     let linkedLeadId: string | undefined;
     let linkedClientId: string | undefined;
 
-    const existing = await this.findClientOrLeadByPhone(data.phone);
+    const existing = await this.findClientOrLeadByPhone(data.phone, officeId);
     function generateLeadCode() {
       return `LEAD-${Math.floor(Math.random() * 1000000)}`;
     }
@@ -62,6 +71,7 @@ export class IntegrationsService {
           source: 'WHATSAPP',
           status: 'NEW',
           notes: 'Criado automaticamente via WhatsApp',
+          officeId,
         },
       });
       linkedLeadId = lead.id;
@@ -73,7 +83,8 @@ export class IntegrationsService {
 
     const conversation = await this.prisma.conversation.upsert({
       where: {
-        channel_phone: {
+        officeId_channel_phone: {
+          officeId,
           channel: 'WHATSAPP',
           phone: normalized ?? data.phone,
         },
@@ -93,6 +104,7 @@ export class IntegrationsService {
         clientId: linkedClientId,
         status: 'OPEN',
         lastMessageAt: new Date(),
+        officeId,
       },
     });
 
@@ -108,11 +120,13 @@ export class IntegrationsService {
     return { conversation, message };
   }
 
-  async closeConversation(phone: string) {
+  async closeConversation(phone: string, officeId: string) {
+    officeId = this.requireOfficeId(officeId);
     const normalized = this.normalizePhone(phone);
     return this.prisma.conversation.update({
       where: {
-        channel_phone: {
+        officeId_channel_phone: {
+          officeId,
           channel: 'WHATSAPP',
           phone: normalized ?? phone,
         },
@@ -123,7 +137,14 @@ export class IntegrationsService {
     });
   }
 
-  async triageLead(data: TriageDto) {
+  async triageLead(data: TriageDto, officeId: string) {
+    officeId = this.requireOfficeId(officeId);
+    const existing = await this.prisma.lead.findFirst({
+      where: { id: data.leadId, officeId },
+    });
+    if (!existing) {
+      throw new Error('Lead nao encontrado');
+    }
     return this.prisma.lead.update({
       where: { id: data.leadId },
       data: {
@@ -134,9 +155,10 @@ export class IntegrationsService {
     });
   }
 
-  async getLatestProcessUpdateByClientCode(code: string) {
+  async getLatestProcessUpdateByClientCode(code: string, officeId: string) {
+    officeId = this.requireOfficeId(officeId);
     const process = await this.prisma.process.findFirst({
-      where: { client: { code } },
+      where: { client: { code }, officeId },
       include: {
         client: true,
         events: true,
@@ -158,11 +180,12 @@ export class IntegrationsService {
     };
   }
 
-  async getLatestProcessUpdateByPhone(phone: string) {
-    const existing = await this.findClientOrLeadByPhone(phone);
+  async getLatestProcessUpdateByPhone(phone: string, officeId: string) {
+    officeId = this.requireOfficeId(officeId);
+    const existing = await this.findClientOrLeadByPhone(phone, officeId);
     if (!existing || existing.type !== 'client') return null;
 
-    return this.getLatestProcessUpdateByClientCode(existing.record.code);
+    return this.getLatestProcessUpdateByClientCode(existing.record.code, officeId);
   }
 
   async listAvailability(params: {
@@ -172,7 +195,9 @@ export class IntegrationsService {
     workStart: string;
     workEnd: string;
     intervalMinutes: number;
+    officeId: string;
   }) {
+    this.requireOfficeId(params.officeId);
     const { from, to, durationMinutes, workStart, workEnd, intervalMinutes } =
       params;
 
@@ -181,6 +206,7 @@ export class IntegrationsService {
         status: 'SCHEDULED',
         startAt: { lt: to },
         endAt: { gt: from },
+        officeId: params.officeId,
       },
       orderBy: { startAt: 'asc' },
     });
@@ -232,23 +258,26 @@ export class IntegrationsService {
     return slots;
   }
 
-  async listAppointments(from: Date, to: Date) {
+  async listAppointments(from: Date, to: Date, officeId: string) {
+    officeId = this.requireOfficeId(officeId);
     return this.prisma.appointment.findMany({
       where: {
         status: 'SCHEDULED',
         startAt: { gte: from, lte: to },
+        officeId,
       },
       orderBy: { startAt: 'asc' },
     });
   }
 
-  async createAppointment(data: CreateAppointmentDto) {
+  async createAppointment(data: CreateAppointmentDto, officeId: string) {
+    officeId = this.requireOfficeId(officeId);
     const normalized = this.normalizePhone(data.phone);
     let leadId = data.leadId;
     let clientId = data.clientId;
 
     if (!leadId && !clientId && data.phone) {
-      const existing = await this.findClientOrLeadByPhone(data.phone);
+      const existing = await this.findClientOrLeadByPhone(data.phone, officeId);
       if (existing?.type === 'client') clientId = existing.record.id;
       if (existing?.type === 'lead') leadId = existing.record.id;
     }
@@ -266,6 +295,7 @@ export class IntegrationsService {
         phone: normalized ?? data.phone,
         leadId,
         clientId,
+        officeId,
       },
     });
   }

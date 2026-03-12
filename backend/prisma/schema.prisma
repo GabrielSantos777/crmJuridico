@@ -13,26 +13,74 @@ model User {
 
   name     String
   email    String @unique
+  cpf      String? @unique
   password String
 
   role UserRole @default(UNASSIGNED)
+  mustChangePassword Boolean @default(false)
+
+  officeId String?
+  office   Office? @relation(fields: [officeId], references: [id])
 
   createdAt DateTime @default(now())
 
   memberships GroupMember[]
+  offices      UserOffice[]
 }
 
 enum UserRole {
+  SUPER_ADMIN
   ADMIN
   LAWYER
   BASIC
   UNASSIGNED
 }
 
+model Office {
+  id String @id @default(uuid())
+
+  name  String
+  cnpj  String @unique
+  domain String?
+  email String?
+  phone String?
+
+  users         User[]
+  leads         Lead[]
+  clients       Client[]
+  processes     Process[]
+  appointments  Appointment[]
+  deadlines     LegalDeadline[]
+  groups        Group[]
+  notifications Notification[]
+  kanbanColumns KanbanColumn[]
+  kanbanCards   KanbanCard[]
+  conversations Conversation[]
+  settings      OfficeSettings[]
+  members       UserOffice[]
+
+  createdAt DateTime @default(now())
+}
+
+model UserOffice {
+  id String @id @default(uuid())
+
+  userId   String
+  officeId String
+  role     UserRole @default(BASIC)
+
+  user   User   @relation(fields: [userId], references: [id])
+  office Office @relation(fields: [officeId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, officeId])
+}
+
 // TABELA LEADS
 model Lead {
   id             String  @id @default(uuid())
-  code           String  @unique
+  code           String
   name           String
   email          String?
   phone          String
@@ -42,17 +90,22 @@ model Lead {
   status         String  @default("NEW")
   notes          String?
 
+  officeId String
+  office   Office @relation(fields: [officeId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   client    Client?
   conversations Conversation[]
   appointments  Appointment[]
+
+  @@unique([officeId, code])
 }
 
 // TABELA CLIENTES
 model Client {
   id      String  @id @default(uuid())
-  code    String  @unique
+  code    String
   name    String
   email   String?
   phone   String
@@ -60,6 +113,9 @@ model Client {
   cpfCnpj String?
   address String?
   status  ClientStatus @default(ACTIVE)
+
+  officeId String
+  office   Office @relation(fields: [officeId], references: [id])
 
   leadId    String?   @unique
   lead      Lead?     @relation(fields: [leadId], references: [id])
@@ -70,6 +126,8 @@ model Client {
   conversations Conversation[]
   appointments  Appointment[]
   files          ClientFile[]
+
+  @@unique([officeId, code])
 }
 
 enum ClientStatus {
@@ -81,11 +139,14 @@ enum ClientStatus {
 
 model Process {
   id     String @id @default(uuid())
-  code   String @unique
-  number String @unique
+  code   String
+  number String
   title  String
   area   String
   status String
+
+  officeId String
+  office   Office @relation(fields: [officeId], references: [id])
 
   clientId String
   client   Client @relation(fields: [clientId], references: [id])
@@ -98,6 +159,9 @@ model Process {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([officeId, code])
+  @@unique([officeId, number])
 }
 
 // TABELA DE TRIBUNAL
@@ -170,11 +234,14 @@ model Conversation {
   status        ConversationStatus @default(OPEN)
   lastMessageAt DateTime?
 
+  officeId String
+  office   Office @relation(fields: [officeId], references: [id])
+
   messages  Message[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([channel, phone])
+  @@unique([officeId, channel, phone])
 }
 
 model Message {
@@ -209,6 +276,9 @@ model Appointment {
   externalSource String?
   externalId     String?
 
+  officeId String
+  office   Office @relation(fields: [officeId], references: [id])
+
   leadId String?
   lead   Lead? @relation(fields: [leadId], references: [id])
 
@@ -219,7 +289,7 @@ model Appointment {
   updatedAt DateTime @updatedAt
 
   @@index([startAt, endAt])
-  @@unique([externalSource, externalId])
+  @@unique([officeId, externalSource, externalId])
 }
 
 model ClientFile {
@@ -238,7 +308,10 @@ model ClientFile {
 }
 
 model OfficeSettings {
-  id String @id @default("office")
+  id String @id @default(uuid())
+
+  officeId String
+  office   Office @relation(fields: [officeId], references: [id])
 
   name    String
   cnpj    String
@@ -251,6 +324,8 @@ model OfficeSettings {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([officeId])
 }
 
 model Notification {
@@ -260,6 +335,9 @@ model Notification {
   title String
   body  String?
   link  String?
+
+  officeId String
+  office   Office @relation(fields: [officeId], references: [id])
 
   readAt DateTime?
 
@@ -271,6 +349,9 @@ model KanbanColumn {
 
   title String
   order Int
+
+  officeId String
+  office   Office @relation(fields: [officeId], references: [id])
 
   externalId String?
 
@@ -293,6 +374,9 @@ model KanbanCard {
   externalId String?
   dueAt      DateTime?
 
+  officeId String
+  office   Office @relation(fields: [officeId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -302,6 +386,9 @@ model Group {
 
   name String
   role UserRole
+
+  officeId String
+  office   Office @relation(fields: [officeId], references: [id])
 
   members GroupMember[]
   invites GroupInvite[]
@@ -347,6 +434,9 @@ model LegalDeadline {
   dueDate   DateTime
 
   status String @default("PENDING")
+
+  officeId String
+  office   Office @relation(fields: [officeId], references: [id])
 
   processId String
   process   Process @relation(fields: [processId], references: [id])

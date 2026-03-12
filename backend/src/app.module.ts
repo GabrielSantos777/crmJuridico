@@ -15,6 +15,7 @@ import { MetricsModule } from './metrics/metrics.module';
 import { ReportsModule } from './reports/reports.module';
 import { KanbanModule } from './kanban/kanban.module';
 import { GroupsModule } from './groups/groups.module';
+import { OfficesModule } from './offices/offices.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { GroupsModule } from './groups/groups.module';
     ReportsModule,
     KanbanModule,
     GroupsModule,
+    OfficesModule,
     ConfigModule.forRoot({
       isGlobal: true,
     }),

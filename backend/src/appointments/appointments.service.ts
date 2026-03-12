@@ -12,10 +12,12 @@ export class AppointmentsService {
     to?: Date;
     status?: string;
     type?: string;
+    officeId: string;
   }) {
-    const { from, to, status, type } = params;
+    const { from, to, status, type, officeId } = params;
     return this.prisma.appointment.findMany({
       where: {
+        officeId,
         ...(from || to
           ? {
               startAt: {
@@ -35,12 +37,13 @@ export class AppointmentsService {
     });
   }
 
-  async upcoming(limit = 5) {
+  async upcoming(officeId: string, limit = 5) {
     const now = new Date();
     return this.prisma.appointment.findMany({
       where: {
         status: 'SCHEDULED',
         startAt: { gte: now },
+        officeId,
       },
       orderBy: { startAt: 'asc' },
       take: limit,
@@ -51,10 +54,11 @@ export class AppointmentsService {
     });
   }
 
-  async listAvailable(from?: Date, to?: Date) {
+  async listAvailable(officeId: string, from?: Date, to?: Date) {
     return this.prisma.appointment.findMany({
       where: {
         status: 'AVAILABLE',
+        officeId,
         ...(from || to
           ? {
               startAt: {
@@ -68,7 +72,7 @@ export class AppointmentsService {
     });
   }
 
-  async create(data: CreateAppointmentDto) {
+  async create(data: CreateAppointmentDto, officeId: string) {
     const appt = await this.prisma.appointment.create({
       data: {
         title: data.title,
@@ -86,6 +90,7 @@ export class AppointmentsService {
         clientId: data.clientId,
         externalSource: data.externalSource,
         externalId: data.externalId,
+        officeId,
       },
     });
     if (appt.status === 'SCHEDULED') {
@@ -95,13 +100,16 @@ export class AppointmentsService {
           title: 'Novo evento na agenda',
           body: `${appt.title} - ${appt.startAt.toISOString()}`,
           link: '/agenda',
+          officeId,
         },
       });
     }
     return appt;
   }
 
-  async update(id: string, data: UpdateAppointmentDto) {
+  async update(id: string, data: UpdateAppointmentDto, officeId: string) {
+    const existing = await this.prisma.appointment.findFirst({ where: { id, officeId } });
+    if (!existing) throw new NotFoundException('Evento nÃ£o encontrado');
     return this.prisma.appointment.update({
       where: { id },
       data: {
@@ -112,14 +120,16 @@ export class AppointmentsService {
     });
   }
 
-  async remove(id: string) {
+  async remove(id: string, officeId: string) {
+    const existing = await this.prisma.appointment.findFirst({ where: { id, officeId } });
+    if (!existing) throw new NotFoundException('Evento nÃ£o encontrado');
     return this.prisma.appointment.delete({
       where: { id },
     });
   }
 
-  async book(id: string, data: UpdateAppointmentDto) {
-    const appt = await this.prisma.appointment.findUnique({ where: { id } });
+  async book(id: string, data: UpdateAppointmentDto, officeId: string) {
+    const appt = await this.prisma.appointment.findFirst({ where: { id, officeId } });
     if (!appt) throw new NotFoundException('Evento nÃ£o encontrado');
     return this.prisma.appointment.update({
       where: { id },

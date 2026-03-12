@@ -1,23 +1,26 @@
-import { BadRequestException, Body, Controller, Get, Patch, Post, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Patch, Post, UseInterceptors, UploadedFile, UseGuards, Request } from '@nestjs/common';
 import { SettingsService } from './settings.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { Multer } from 'multer';
+import { JwtAuthGuard } from '../auth/jwt.guard';
+import { OfficeGuard } from '../auth/office.guard';
 
 @Controller('settings')
+@UseGuards(JwtAuthGuard, OfficeGuard)
 export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
   @Get('office')
-  getOffice() {
-    return this.settingsService.getOffice();
+  getOffice(@Request() req) {
+    return this.settingsService.getOffice(req.user.officeId);
   }
 
   @Patch('office')
-  updateOffice(@Body() data: any) {
-    return this.settingsService.updateOffice(data);
+  updateOffice(@Body() data: any, @Request() req) {
+    return this.settingsService.updateOffice(req.user.officeId, data);
   }
 
   @Post('office/logo')
@@ -42,11 +45,14 @@ export class SettingsController {
       limits: { fileSize: 5 * 1024 * 1024 },
     }),
   )
-  async uploadLogo(@UploadedFile() file: Multer.File) {
+  async uploadLogo(@UploadedFile() file: Multer.File, @Request() req) {
     if (!file) {
       throw new BadRequestException('Arquivo nao enviado');
     }
+    if (!file.mimetype?.startsWith('image/')) {
+      throw new BadRequestException('Formato de arquivo invalido');
+    }
     const logoUrl = `/uploads/office/${file.filename}`;
-    return this.settingsService.updateOffice({ logoUrl });
+    return this.settingsService.updateOffice(req.user.officeId, { logoUrl });
   }
 }

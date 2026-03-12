@@ -9,7 +9,7 @@ export class ClientsService {
 
   constructor(private prisma: PrismaService) {}
 
-  private async generateClientCode() {
+  private async generateClientCode(officeId: string) {
     let seq: number
     try {
       const result: any = await this.prisma.$queryRaw`
@@ -17,7 +17,7 @@ export class ClientsService {
       `
       seq = Number(result[0].seq)
     } catch {
-      const count = await this.prisma.client.count()
+      const count = await this.prisma.client.count({ where: { officeId } })
       seq = count + 1
     }
     const year = new Date().getFullYear()
@@ -26,11 +26,13 @@ export class ClientsService {
     return `C-${year}-${number}`
   }
 
-  async create(data: any) {
-    const code = await this.generateClientCode()
-    const phoneNormalized = data?.phone ? String(data.phone).replace(/\D/g, '') : undefined;
+  async create(data: any, officeId: string) {
+    const code = await this.generateClientCode(officeId)
+    const phoneNormalized = data?.phone
+      ? String(data.phone).replace(/\D/g, '')
+      : undefined
     const client = await this.prisma.client.create({
-      data: { ...data, code, phoneNormalized },
+      data: { ...data, code, phoneNormalized, officeId },
     })
     await this.prisma.notification.create({
       data: {
@@ -38,31 +40,34 @@ export class ClientsService {
         title: 'Novo cliente',
         body: `${client.name} - ${client.phone}`,
         link: '/clients',
+        officeId,
       },
     })
     return client
   }
 
-  async findAll(q?: string) {
+  async findAll(officeId: string, q?: string) {
     return this.prisma.client.findMany({
       where: q
-        ? { name: { contains: q, mode: 'insensitive' } }
-        : undefined,
+        ? { officeId, name: { contains: q, mode: 'insensitive' } }
+        : { officeId },
       include: {
-        lead: true
-      }
+        lead: true,
+      },
     })
   }
 
-  async findOne(id: string) {
-    const client = await this.prisma.client.findUnique({
-      where: { id },
+  async findOne(id: string, officeId: string) {
+    const client = await this.prisma.client.findFirst({
+      where: { id, officeId },
     })
-    if (!client) throw new NotFoundException('Cliente nÃ£o encontrado')
+    if (!client) throw new NotFoundException('Cliente nao encontrado')
     return client
   }
 
-  async update(id: string, data: any) {
+  async update(id: string, data: any, officeId: string) {
+    const existing = await this.prisma.client.findFirst({ where: { id, officeId } })
+    if (!existing) throw new NotFoundException('Cliente nao encontrado')
     const phoneNormalized = data?.phone
       ? String(data.phone).replace(/\D/g, '')
       : undefined
@@ -72,24 +77,26 @@ export class ClientsService {
     })
   }
 
-  async remove(id: string) {
+  async remove(id: string, officeId: string) {
+    const existing = await this.prisma.client.findFirst({ where: { id, officeId } })
+    if (!existing) throw new NotFoundException('Cliente nao encontrado')
     return this.prisma.client.delete({
       where: { id },
     })
   }
 
-  async listFiles(clientId: string) {
+  async listFiles(clientId: string, officeId: string) {
     return this.prisma.clientFile.findMany({
-      where: { clientId },
+      where: { clientId, client: { officeId } },
       orderBy: { createdAt: 'desc' },
     })
   }
 
-  async attachFile(clientId: string, file: Multer.File) {
-    const client = await this.prisma.client.findUnique({
-      where: { id: clientId },
+  async attachFile(clientId: string, file: Multer.File, officeId: string) {
+    const client = await this.prisma.client.findFirst({
+      where: { id: clientId, officeId },
     })
-    if (!client) throw new NotFoundException('Cliente nÃ£o encontrado')
+    if (!client) throw new NotFoundException('Cliente nao encontrado')
 
     return this.prisma.clientFile.create({
       data: {
@@ -103,18 +110,24 @@ export class ClientsService {
     })
   }
 
-  async getFile(clientId: string, fileId: string) {
+  async getFile(clientId: string, fileId: string, officeId: string) {
     const file = await this.prisma.clientFile.findUnique({
       where: { id: fileId },
     })
     if (!file || file.clientId !== clientId) {
-      throw new NotFoundException('Arquivo nÃ£o encontrado')
+      throw new NotFoundException('Arquivo nao encontrado')
+    }
+    const client = await this.prisma.client.findFirst({
+      where: { id: clientId, officeId },
+    })
+    if (!client) {
+      throw new NotFoundException('Arquivo nao encontrado')
     }
     return file
   }
 
-  async deleteFile(clientId: string, fileId: string) {
-    const file = await this.getFile(clientId, fileId)
+  async deleteFile(clientId: string, fileId: string, officeId: string) {
+    const file = await this.getFile(clientId, fileId, officeId)
 
     await this.prisma.clientFile.delete({
       where: { id: fileId },

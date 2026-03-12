@@ -1,27 +1,28 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, UseGuards, Request } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { OfficeGuard } from '../auth/office.guard';
 
 @Controller('metrics')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, OfficeGuard)
 export class MetricsController {
   constructor(private prisma: PrismaService) {}
 
   @Get()
   @Roles('ADMIN', 'LAWYER')
-  async getMetrics() {
+  async getMetrics(@Request() req) {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
     const leadsMonth = await this.prisma.lead.count({
-      where: { createdAt: { gte: start, lte: end } },
+      where: { officeId: req.user.officeId, createdAt: { gte: start, lte: end } },
     });
 
     const newClients = await this.prisma.client.count({
-      where: { createdAt: { gte: start, lte: end } },
+      where: { officeId: req.user.officeId, createdAt: { gte: start, lte: end } },
     });
 
     const conversionRate =

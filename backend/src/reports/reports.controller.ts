@@ -1,11 +1,12 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { OfficeGuard } from '../auth/office.guard';
 
 @Controller('reports')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, OfficeGuard)
 export class ReportsController {
   constructor(private prisma: PrismaService) {}
 
@@ -23,9 +24,11 @@ export class ReportsController {
 
   @Get('clients')
   @Roles('ADMIN', 'LAWYER')
-  async clients(@Query('from') from?: string, @Query('to') to?: string) {
+  async clients(@Request() req, @Query('from') from?: string, @Query('to') to?: string) {
     const range = this.parseRange(from, to);
-    const where = range.from || range.to ? { createdAt: { gte: range.from, lte: range.to } } : {};
+    const where = range.from || range.to
+      ? { officeId: req.user.officeId, createdAt: { gte: range.from, lte: range.to } }
+      : { officeId: req.user.officeId };
     const total = await this.prisma.client.count({ where });
     const active = await this.prisma.client.count({ where: { ...where, status: 'ACTIVE' } });
     const inactive = await this.prisma.client.count({ where: { ...where, status: 'INACTIVE' } });
@@ -39,9 +42,11 @@ export class ReportsController {
 
   @Get('processes')
   @Roles('ADMIN', 'LAWYER')
-  async processes(@Query('from') from?: string, @Query('to') to?: string) {
+  async processes(@Request() req, @Query('from') from?: string, @Query('to') to?: string) {
     const range = this.parseRange(from, to);
-    const where = range.from || range.to ? { createdAt: { gte: range.from, lte: range.to } } : {};
+    const where = range.from || range.to
+      ? { officeId: req.user.officeId, createdAt: { gte: range.from, lte: range.to } }
+      : { officeId: req.user.officeId };
 
     const byArea = await this.prisma.process.groupBy({
       by: ['area'],
@@ -65,9 +70,11 @@ export class ReportsController {
 
   @Get('performance')
   @Roles('ADMIN', 'LAWYER')
-  async performance(@Query('from') from?: string, @Query('to') to?: string) {
+  async performance(@Request() req, @Query('from') from?: string, @Query('to') to?: string) {
     const range = this.parseRange(from, to);
-    const where = range.from || range.to ? { createdAt: { gte: range.from, lte: range.to } } : {};
+    const where = range.from || range.to
+      ? { officeId: req.user.officeId, createdAt: { gte: range.from, lte: range.to } }
+      : { officeId: req.user.officeId };
     const leads = await this.prisma.lead.count({ where });
     const clients = await this.prisma.client.count({ where });
     const convertedClients = await this.prisma.client.count({
@@ -90,7 +97,7 @@ export class ReportsController {
 
   @Get('financial')
   @Roles('ADMIN', 'LAWYER')
-  async financial(@Query('from') from?: string, @Query('to') to?: string) {
+  async financial(@Request() req, @Query('from') from?: string, @Query('to') to?: string) {
     return { revenue: 0, fees: 0 };
   }
 }

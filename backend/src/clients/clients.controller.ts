@@ -10,6 +10,8 @@ import {
   UseInterceptors,
   UploadedFile,
   Res,
+  UseGuards,
+  Request,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -18,40 +20,43 @@ import * as path from 'path';
 import type { Response } from 'express';
 import type { Multer } from 'multer';
 import { ClientsService } from './clients.service';
+import { JwtAuthGuard } from '../auth/jwt.guard';
+import { OfficeGuard } from '../auth/office.guard';
 
 @Controller('clients')
+@UseGuards(JwtAuthGuard, OfficeGuard)
 export class ClientsController {
 
   constructor(private readonly clientsService: ClientsService) {}
 
   @Get()
-  findAll(@Query('q') q?: string) {
-    return this.clientsService.findAll(q);
+  findAll(@Request() req, @Query('q') q?: string) {
+    return this.clientsService.findAll(req.user.officeId, q);
   }
 
   @Post()
-  create(@Body() data: any) {
-    return this.clientsService.create(data);
+  create(@Body() data: any, @Request() req) {
+    return this.clientsService.create(data, req.user.officeId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.clientsService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req) {
+    return this.clientsService.findOne(id, req.user.officeId);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() data: any) {
-    return this.clientsService.update(id, data);
+  update(@Param('id') id: string, @Body() data: any, @Request() req) {
+    return this.clientsService.update(id, data, req.user.officeId);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.clientsService.remove(id);
+  remove(@Param('id') id: string, @Request() req) {
+    return this.clientsService.remove(id, req.user.officeId);
   }
 
   @Get(':id/files')
-  listFiles(@Param('id') id: string) {
-    return this.clientsService.listFiles(id);
+  listFiles(@Param('id') id: string, @Request() req) {
+    return this.clientsService.listFiles(id, req.user.officeId);
   }
 
   @Post(':id/files')
@@ -80,8 +85,9 @@ export class ClientsController {
   async uploadFile(
     @Param('id') id: string,
     @UploadedFile() file: Multer.File,
+    @Request() req,
   ) {
-    return this.clientsService.attachFile(id, file);
+    return this.clientsService.attachFile(id, file, req.user.officeId);
   }
 
   @Get(':id/files/:fileId/download')
@@ -89,8 +95,9 @@ export class ClientsController {
     @Param('id') id: string,
     @Param('fileId') fileId: string,
     @Res() res: Response,
+    @Request() req,
   ) {
-    const file = await this.clientsService.getFile(id, fileId);
+    const file = await this.clientsService.getFile(id, fileId, req.user.officeId);
     return res.download(file.storagePath, file.originalName);
   }
 
@@ -98,7 +105,8 @@ export class ClientsController {
   async deleteFile(
     @Param('id') id: string,
     @Param('fileId') fileId: string,
+    @Request() req,
   ) {
-    return this.clientsService.deleteFile(id, fileId);
+    return this.clientsService.deleteFile(id, fileId, req.user.officeId);
   }
 }

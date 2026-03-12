@@ -114,6 +114,7 @@ export class TrelloService {
     listId?: string;
     due?: string;
     createAppointment?: boolean;
+    officeId?: string;
   }) {
     const { key, token } = this.getAuth();
     const idList = params.listId ?? process.env.TRELLO_LIST_ID;
@@ -135,7 +136,8 @@ export class TrelloService {
       const endAt = new Date(startAt.getTime() + 30 * 60 * 1000);
       await this.prisma.appointment.upsert({
         where: {
-          externalSource_externalId: {
+          officeId_externalSource_externalId: {
+            officeId: params.officeId ?? '',
             externalSource: 'TRELLO',
             externalId: card.id,
           },
@@ -148,6 +150,7 @@ export class TrelloService {
           status: 'SCHEDULED',
           type: 'OTHER',
           mode: 'ONLINE',
+          officeId: params.officeId ?? '',
         },
         create: {
           title: card.name,
@@ -157,6 +160,7 @@ export class TrelloService {
           status: 'SCHEDULED',
           type: 'OTHER',
           mode: 'ONLINE',
+          officeId: params.officeId ?? '',
           externalSource: 'TRELLO',
           externalId: card.id,
         },
@@ -166,7 +170,7 @@ export class TrelloService {
     return card;
   }
 
-  async syncDueCardsToAgenda(listId?: string) {
+  async syncDueCardsToAgenda(listId?: string, officeId?: string) {
     const cards = await this.listCards(listId);
     const created: any[] = [];
     for (const card of cards) {
@@ -175,7 +179,8 @@ export class TrelloService {
       const endAt = new Date(startAt.getTime() + 30 * 60 * 1000);
       const appt = await this.prisma.appointment.upsert({
         where: {
-          externalSource_externalId: {
+          officeId_externalSource_externalId: {
+            officeId: officeId ?? '',
             externalSource: 'TRELLO',
             externalId: card.id,
           },
@@ -188,6 +193,7 @@ export class TrelloService {
           status: 'SCHEDULED',
           type: 'OTHER',
           mode: 'ONLINE',
+          officeId,
         },
         create: {
           title: card.name,
@@ -197,6 +203,7 @@ export class TrelloService {
           status: 'SCHEDULED',
           type: 'OTHER',
           mode: 'ONLINE',
+          officeId: officeId ?? '',
           externalSource: 'TRELLO',
           externalId: card.id,
         },
@@ -206,3 +213,4 @@ export class TrelloService {
     return created;
   }
 }
+

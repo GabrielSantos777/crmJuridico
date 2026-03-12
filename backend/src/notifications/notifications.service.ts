@@ -5,29 +5,36 @@ import { PrismaService } from '../prisma/prisma.service';
 export class NotificationsService {
   constructor(private prisma: PrismaService) {}
 
-  async list(params?: { unreadOnly?: boolean; limit?: number }) {
-    const { unreadOnly, limit } = params ?? {};
+  async list(params?: { unreadOnly?: boolean; limit?: number; officeId?: string }) {
+    const { unreadOnly, limit, officeId } = params ?? {};
     return this.prisma.notification.findMany({
-      where: unreadOnly ? { readAt: null } : undefined,
+      where: {
+        ...(officeId ? { officeId } : {}),
+        ...(unreadOnly ? { readAt: null } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
   }
 
-  async create(data: { type: string; title: string; body?: string; link?: string }) {
+  async create(data: { type: string; title: string; body?: string; link?: string; officeId: string }) {
     return this.prisma.notification.create({ data });
   }
 
-  async markRead(id: string) {
+  async markRead(id: string, officeId: string) {
+    const existing = await this.prisma.notification.findFirst({ where: { id, officeId } });
+    if (!existing) {
+      return null;
+    }
     return this.prisma.notification.update({
       where: { id },
       data: { readAt: new Date() },
     });
   }
 
-  async markAllRead() {
+  async markAllRead(officeId: string) {
     return this.prisma.notification.updateMany({
-      where: { readAt: null },
+      where: { readAt: null, officeId },
       data: { readAt: new Date() },
     });
   }

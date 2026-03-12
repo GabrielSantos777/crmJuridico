@@ -7,17 +7,23 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
+  Request,
 } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
+import { JwtAuthGuard } from '../auth/jwt.guard';
+import { OfficeGuard } from '../auth/office.guard';
 
 @Controller('appointments')
+@UseGuards(JwtAuthGuard, OfficeGuard)
 export class AppointmentsController {
   constructor(private readonly appointmentsService: AppointmentsService) {}
 
   @Get()
   list(
+    @Request() req,
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('status') status?: string,
@@ -28,39 +34,41 @@ export class AppointmentsController {
       to: to ? new Date(to) : undefined,
       status,
       type,
+      officeId: req.user.officeId,
     });
   }
 
   @Get('upcoming')
-  upcoming(@Query('limit') limit?: string) {
-    return this.appointmentsService.upcoming(Number(limit ?? 5));
+  upcoming(@Request() req, @Query('limit') limit?: string) {
+    return this.appointmentsService.upcoming(req.user.officeId, Number(limit ?? 5));
   }
 
   @Get('available')
-  available(@Query('from') from?: string, @Query('to') to?: string) {
+  available(@Request() req, @Query('from') from?: string, @Query('to') to?: string) {
     return this.appointmentsService.listAvailable(
+      req.user.officeId,
       from ? new Date(from) : undefined,
       to ? new Date(to) : undefined,
     );
   }
 
   @Post()
-  create(@Body() data: CreateAppointmentDto) {
-    return this.appointmentsService.create(data);
+  create(@Body() data: CreateAppointmentDto, @Request() req) {
+    return this.appointmentsService.create(data, req.user.officeId);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() data: UpdateAppointmentDto) {
-    return this.appointmentsService.update(id, data);
+  update(@Param('id') id: string, @Body() data: UpdateAppointmentDto, @Request() req) {
+    return this.appointmentsService.update(id, data, req.user.officeId);
   }
 
   @Post(':id/book')
-  book(@Param('id') id: string, @Body() data: UpdateAppointmentDto) {
-    return this.appointmentsService.book(id, data);
+  book(@Param('id') id: string, @Body() data: UpdateAppointmentDto, @Request() req) {
+    return this.appointmentsService.book(id, data, req.user.officeId);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.appointmentsService.remove(id);
+  remove(@Param('id') id: string, @Request() req) {
+    return this.appointmentsService.remove(id, req.user.officeId);
   }
 }

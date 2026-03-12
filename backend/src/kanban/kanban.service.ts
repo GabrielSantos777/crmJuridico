@@ -10,18 +10,19 @@ export class KanbanService {
     return process.env.TRELLO_BOARD_ID;
   }
 
-  async listBoard() {
+  async listBoard(officeId: string) {
     const columns = await this.prisma.kanbanColumn.findMany({
+      where: { officeId },
       orderBy: { order: 'asc' },
       include: { cards: { orderBy: { order: 'asc' } } },
     });
     return columns;
   }
 
-  async createColumn(title: string) {
-    const count = await this.prisma.kanbanColumn.count();
+  async createColumn(title: string, officeId: string) {
+    const count = await this.prisma.kanbanColumn.count({ where: { officeId } });
     const column = await this.prisma.kanbanColumn.create({
-      data: { title, order: count + 1 },
+      data: { title, order: count + 1, officeId },
     });
 
     const boardId = this.boardId();
@@ -40,7 +41,9 @@ export class KanbanService {
     return column;
   }
 
-  async updateColumn(id: string, title: string) {
+  async updateColumn(id: string, title: string, officeId: string) {
+    const existing = await this.prisma.kanbanColumn.findFirst({ where: { id, officeId } });
+    if (!existing) throw new Error('Coluna nÃ£o encontrada');
     const column = await this.prisma.kanbanColumn.update({
       where: { id },
       data: { title },
@@ -61,7 +64,7 @@ export class KanbanService {
     title: string;
     description?: string;
     dueAt?: string;
-  }) {
+  }, officeId: string) {
     const count = await this.prisma.kanbanCard.count({
       where: { columnId: data.columnId },
     });
@@ -73,11 +76,12 @@ export class KanbanService {
         description: data.description,
         dueAt: data.dueAt ? new Date(data.dueAt) : undefined,
         order: count + 1,
+        officeId,
       },
     });
 
-    const column = await this.prisma.kanbanColumn.findUnique({
-      where: { id: data.columnId },
+    const column = await this.prisma.kanbanColumn.findFirst({
+      where: { id: data.columnId, officeId },
     });
 
     if (column?.externalId) {
@@ -103,13 +107,16 @@ export class KanbanService {
         title: 'Novo card no Trello',
         body: data.title,
         link: '/trello',
+        officeId,
       },
     });
 
     return card;
   }
 
-  async updateCard(id: string, data: { title?: string; description?: string; dueAt?: string }) {
+  async updateCard(id: string, data: { title?: string; description?: string; dueAt?: string }, officeId: string) {
+    const existing = await this.prisma.kanbanCard.findFirst({ where: { id, officeId } });
+    if (!existing) throw new Error('Card nÃ£o encontrado');
     const card = await this.prisma.kanbanCard.update({
       where: { id },
       data: {
@@ -134,7 +141,9 @@ export class KanbanService {
     return card;
   }
 
-  async moveCard(id: string, toColumnId: string, order: number) {
+  async moveCard(id: string, toColumnId: string, order: number, officeId: string) {
+    const existing = await this.prisma.kanbanCard.findFirst({ where: { id, officeId } });
+    if (!existing) throw new Error('Card nÃ£o encontrado');
     const card = await this.prisma.kanbanCard.update({
       where: { id },
       data: {
@@ -143,8 +152,8 @@ export class KanbanService {
       },
     });
 
-    const column = await this.prisma.kanbanColumn.findUnique({
-      where: { id: toColumnId },
+    const column = await this.prisma.kanbanColumn.findFirst({
+      where: { id: toColumnId, officeId },
     });
 
     if (card.externalId && column?.externalId) {
@@ -161,7 +170,9 @@ export class KanbanService {
     return card;
   }
 
-  async deleteCard(id: string) {
+  async deleteCard(id: string, officeId: string) {
+    const existing = await this.prisma.kanbanCard.findFirst({ where: { id, officeId } });
+    if (!existing) throw new Error('Card nÃ£o encontrado');
     const card = await this.prisma.kanbanCard.delete({ where: { id } });
     if (card.externalId) {
       try {
@@ -173,8 +184,9 @@ export class KanbanService {
     return card;
   }
 
-  async deleteColumn(id: string) {
-    const column = await this.prisma.kanbanColumn.findUnique({ where: { id } });
+  async deleteColumn(id: string, officeId: string) {
+    const column = await this.prisma.kanbanColumn.findFirst({ where: { id, officeId } });
+    if (!column) throw new Error('Coluna nÃ£o encontrada');
     await this.prisma.kanbanColumn.delete({ where: { id } });
     if (column?.externalId) {
       try {
@@ -186,7 +198,7 @@ export class KanbanService {
     return { ok: true };
   }
 
-  async syncFromTrello() {
+  async syncFromTrello(officeId: string) {
     const boardId = this.boardId();
     if (!boardId) return { synced: 0 };
 
@@ -196,12 +208,12 @@ export class KanbanService {
     for (let i = 0; i < lists.length; i += 1) {
       const list = lists[i];
       let column = await this.prisma.kanbanColumn.findFirst({
-        where: { externalId: list.id },
+        where: { externalId: list.id, officeId },
       });
 
       if (!column) {
         column = await this.prisma.kanbanColumn.create({
-          data: { title: list.name, order: i + 1, externalId: list.id },
+          data: { title: list.name, order: i + 1, externalId: list.id, officeId },
         });
       } else {
         column = await this.prisma.kanbanColumn.update({
@@ -214,7 +226,7 @@ export class KanbanService {
       for (let c = 0; c < cards.length; c += 1) {
         const card = cards[c];
         const existing = await this.prisma.kanbanCard.findFirst({
-          where: { externalId: card.id },
+          where: { externalId: card.id, officeId },
         });
         if (!existing) {
           await this.prisma.kanbanCard.create({
@@ -225,6 +237,7 @@ export class KanbanService {
               dueAt: card.due ? new Date(card.due) : undefined,
               order: c + 1,
               externalId: card.id,
+              officeId,
             },
           });
         } else {
@@ -245,3 +258,4 @@ export class KanbanService {
     return { synced };
   }
 }
+

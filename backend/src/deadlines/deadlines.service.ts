@@ -9,15 +9,19 @@ export class DeadlinesService {
     private trello: TrelloService,
   ) {}
 
-  async create(data: any) {
+  async create(data: any, officeId: string) {
     const deadline = await this.prisma.legalDeadline.create({
-      data,
+      data: {
+        ...data,
+        officeId,
+      },
     });
 
     try {
       const trelloCard = await this.trello.createCard({
         name: data.title,
         desc: `Prazo do processo ${data.processId}`,
+        officeId,
       });
 
       await this.prisma.legalDeadline.update({
@@ -33,22 +37,27 @@ export class DeadlinesService {
     return deadline;
   }
 
-  async findAll() {
+  async findAll(officeId: string) {
     return this.prisma.legalDeadline.findMany({
+      where: { officeId },
       include: {
         process: true,
       },
     });
   }
 
-  async update(id: string, data: any) {
+  async update(id: string, data: any, officeId: string) {
+    const existing = await this.prisma.legalDeadline.findFirst({ where: { id, officeId } });
+    if (!existing) throw new Error('Prazo nÃ£o encontrado');
     return this.prisma.legalDeadline.update({
       where: { id },
       data,
     });
   }
 
-  async remove(id: string) {
+  async remove(id: string, officeId: string) {
+    const existing = await this.prisma.legalDeadline.findFirst({ where: { id, officeId } });
+    if (!existing) throw new Error('Prazo nÃ£o encontrado');
     return this.prisma.legalDeadline.delete({
       where: { id },
     });
