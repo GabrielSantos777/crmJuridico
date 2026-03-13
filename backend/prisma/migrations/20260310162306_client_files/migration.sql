@@ -2,7 +2,7 @@
 -- CREATE TYPE "ConversationStatus" AS ENUM ('OPEN', 'CLOSED');
 
 -- CreateEnum
-CREATE TYPE "MessageDirection" AS ENUM ('IN', 'OUT');
+-- CREATE TYPE "MessageDirection" AS ENUM ('IN', 'OUT');
 
 -- CreateEnum
 CREATE TYPE "AppointmentStatus" AS ENUM ('SCHEDULED', 'CANCELLED', 'COMPLETED');
