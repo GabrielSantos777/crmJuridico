@@ -8,10 +8,10 @@
 -- CREATE TYPE "AppointmentStatus" AS ENUM ('SCHEDULED', 'CANCELLED', 'COMPLETED');
 
 -- AlterTable
-ALTER TABLE "Client" ADD COLUMN     "phoneNormalized" TEXT;
+-- ALTER TABLE "Client" ADD COLUMN     "phoneNormalized" TEXT;
 
--- AlterTable
-ALTER TABLE "Lead" ADD COLUMN     "phoneNormalized" TEXT;
+-- -- AlterTable
+-- ALTER TABLE "Lead" ADD COLUMN     "phoneNormalized" TEXT;
 
 -- CreateTable
 CREATE TABLE "Conversation" (
