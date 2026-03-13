@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, Get, Patch, Post, UseInterceptor
 import { SettingsService } from './settings.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import * as fs from 'fs';
+import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import type { Multer } from 'multer';
 import { JwtAuthGuard } from '../auth/jwt.guard';
@@ -30,7 +30,7 @@ export class SettingsController {
         destination: async (_req, _file, cb) => {
           const dest = path.join(process.cwd(), 'uploads', 'office');
           try {
-            await fs.mkdir(dest, { recursive: true });
+            await fsPromises.mkdir(dest, { recursive: true });
             cb(null, dest);
           } catch (err) {
             cb(err as Error, dest);

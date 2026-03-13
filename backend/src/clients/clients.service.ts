@@ -1,7 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
-import * as fs from 'fs';
-import * as fs from 'fs';
+import * as fsPromises from 'fs/promises';
 import * as path from 'path'
 import type { Multer } from 'multer'
 
@@ -135,7 +134,7 @@ export class ClientsService {
     })
 
     try {
-      await fs.unlink(path.resolve(file.storagePath))
+      await fsPromises.unlink(path.resolve(file.storagePath));
     } catch {
       // ignore missing files
     }
