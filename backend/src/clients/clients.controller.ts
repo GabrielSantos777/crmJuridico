@@ -15,7 +15,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import * as fs from 'fs/promises';
+import * as fs from 'fs';
 import * as path from 'path';
 import type { Response } from 'express';
 import type { Multer } from 'multer';

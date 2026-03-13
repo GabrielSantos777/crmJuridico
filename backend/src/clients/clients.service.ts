@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
-import * as fs from 'fs/promises'
+import * as fs from 'fs';
+import * as fs from 'fs';
 import * as path from 'path'
 import type { Multer } from 'multer'
 

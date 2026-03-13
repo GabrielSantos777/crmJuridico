@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, Get, Patch, Post, UseInterceptor
 import { SettingsService } from './settings.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import * as fs from 'fs/promises';
+import * as fs from 'fs';
 import * as path from 'path';
 import type { Multer } from 'multer';
 import { JwtAuthGuard } from '../auth/jwt.guard';
