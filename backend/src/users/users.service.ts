@@ -91,7 +91,16 @@ export class UsersService {
   }
 
   async ensureSuperAdmin() {
-    const email = 'gabrielsantos.erick12@gmail.com';
+    const email = process.env.SUPERADMIN_EMAIL?.trim();
+    const password = process.env.SUPERADMIN_PASSWORD;
+    const name = process.env.SUPERADMIN_NAME?.trim() || 'Administrador Geral';
+
+    if (!email || !password) {
+      return null;
+    }
+
+    assertStrongPassword(password);
+
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
       return this.prisma.user.update({
@@ -103,10 +112,10 @@ export class UsersService {
         },
       });
     }
-    const hash = await bcrypt.hash('Teste123', 10);
+    const hash = await bcrypt.hash(password, 10);
     return this.prisma.user.create({
       data: {
-        name: 'Administrador Geral',
+        name,
         email,
         password: hash,
         role: 'SUPER_ADMIN' as any,
