@@ -5,7 +5,7 @@
 -- CREATE TYPE "MessageDirection" AS ENUM ('IN', 'OUT');
 
 -- CreateEnum
-CREATE TYPE "AppointmentStatus" AS ENUM ('SCHEDULED', 'CANCELLED', 'COMPLETED');
+-- CREATE TYPE "AppointmentStatus" AS ENUM ('SCHEDULED', 'CANCELLED', 'COMPLETED');
 
 -- AlterTable
 ALTER TABLE "Client" ADD COLUMN     "phoneNormalized" TEXT;
