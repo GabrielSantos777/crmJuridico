@@ -26,7 +26,6 @@ import { OfficeGuard } from '../auth/office.guard';
 @Controller('clients')
 @UseGuards(JwtAuthGuard, OfficeGuard)
 export class ClientsController {
-
   constructor(private readonly clientsService: ClientsService) {}
 
   @Get()
@@ -59,35 +58,38 @@ export class ClientsController {
     return this.clientsService.listFiles(id, req.user.officeId);
   }
 
-  @Post(':id/files')
+  @Post(':clientId/files')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        destination: async (req, _file, cb) => {
-          const normalizedClientId = Array.isArray(clientId) ? clientId[0] : clientId;
-          const dest = path.join(process.cwd(), 'uploads', 'clients', normalizedClientId);
-          try {
-            await fs.mkdir(dest, { recursive: true });
-            cb(null, dest);
-          } catch (err) {
-            cb(err as Error, dest);
-          }
+        destination: (req, file, cb) => {
+          const clientIdParam = req.params.clientId;
+          const normalizedClientId = Array.isArray(clientIdParam)
+            ? clientIdParam[0]
+            : clientIdParam;
+
+          const dest = path.join(
+            process.cwd(),
+            'uploads',
+            'clients',
+            normalizedClientId,
+          );
+          fs.mkdirSync(dest, { recursive: true });
+          cb(null, dest);
         },
-        filename: (_req, file, cb) => {
-          const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-          const unique = `${Date.now()}_${Math.round(Math.random() * 1e9)}`;
-          cb(null, `${unique}_${safe}`);
+        filename: (req, file, cb) => {
+          const uniqueName = `${Date.now()}-${file.originalname}`;
+          cb(null, uniqueName);
         },
       }),
-      limits: { fileSize: 10 * 1024 * 1024 },
     }),
   )
   async uploadFile(
-    @Param('id') id: string,
-    @UploadedFile() file: Express.Multer.Fil
+    @Param('clientId') clientId: string,
+    @UploadedFile() file: Express.Multer.File,
     @Request() req,
   ) {
-    return this.clientsService.attachFile(id, file, req.user.officeId);
+    return this.clientsService.attachFile(clientId, file, req.user.officeId);
   }
 
   @Get(':id/files/:fileId/download')
@@ -97,7 +99,11 @@ export class ClientsController {
     @Res() res: Response,
     @Request() req,
   ) {
-    const file = await this.clientsService.getFile(id, fileId, req.user.officeId);
+    const file = await this.clientsService.getFile(
+      id,
+      fileId,
+      req.user.officeId,
+    );
     return res.download(file.storagePath, file.originalName);
   }
 
