@@ -15,6 +15,12 @@ services:
         condition: service_started
     volumes:
       - backend_uploads:/app/uploads
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.crm.rule=Host(`api.juriscrm.planix.space`)"
+      - "traefik.http.routers.crm.entrypoints=websecure"
+      - "traefik.http.routers.crm.tls.certresolver=letsencrypt"
+      - "traefik.http.services.crm.loadbalancer.server.port=3000"
 
   db:
     image: postgres:15
