@@ -92,7 +92,7 @@ export class ClientsService {
     })
   }
 
-  async attachFile(clientId: string, file: Multer.File, officeId: string) {
+  async attachFile(clientId: string, file: Express.Multer.File, officeId: string) {
     const client = await this.prisma.client.findFirst({
       where: { id: clientId, officeId },
     })

@@ -45,7 +45,7 @@ export class SettingsController {
       limits: { fileSize: 5 * 1024 * 1024 },
     }),
   )
-  async uploadLogo(@UploadedFile() file: Multer.File, @Request() req) {
+  async uploadLogo(@UploadedFile() file: Express.Multer.File, @Request() req) {
     if (!file) {
       throw new BadRequestException('Arquivo nao enviado');
     }

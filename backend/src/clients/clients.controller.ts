@@ -64,8 +64,8 @@ export class ClientsController {
     FileInterceptor('file', {
       storage: diskStorage({
         destination: async (req, _file, cb) => {
-          const clientId = req.params.id;
-          const dest = path.join(process.cwd(), 'uploads', 'clients', clientId);
+          const normalizedClientId = Array.isArray(clientId) ? clientId[0] : clientId;
+          const dest = path.join(process.cwd(), 'uploads', 'clients', normalizedClientId);
           try {
             await fs.mkdir(dest, { recursive: true });
             cb(null, dest);
@@ -84,7 +84,7 @@ export class ClientsController {
   )
   async uploadFile(
     @Param('id') id: string,
-    @UploadedFile() file: Multer.File,
+    @UploadedFile() file: Express.Multer.Fil
     @Request() req,
   ) {
     return this.clientsService.attachFile(id, file, req.user.officeId);
