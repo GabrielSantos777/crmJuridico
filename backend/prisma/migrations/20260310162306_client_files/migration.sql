@@ -1,5 +1,5 @@
 -- CreateEnum
-CREATE TYPE "ConversationStatus" AS ENUM ('OPEN', 'CLOSED');
+-- CREATE TYPE "ConversationStatus" AS ENUM ('OPEN', 'CLOSED');
 
 -- CreateEnum
 CREATE TYPE "MessageDirection" AS ENUM ('IN', 'OUT');
