@@ -13,6 +13,7 @@ import { ApiKeyGuard } from './api-key.guard';
 import { WhatsappMessageDto } from './dto/whatsapp-message.dto';
 import { TriageDto } from './dto/triage.dto';
 import { CreateAppointmentDto } from './dto/appointment.dto';
+import { UploadClientFileDto } from './dto/upload-client-file.dto';
 
 @Controller('integrations')
 @UseGuards(ApiKeyGuard)
@@ -101,5 +102,11 @@ export class IntegrationsController {
   createAppointment(@Body() data: CreateAppointmentDto & { officeId?: string }, @Headers('x-office-id') officeId?: string) {
     const resolved = this.resolveOfficeId(officeId, data.officeId);
     return this.integrationsService.createAppointment(data, resolved);
+  }
+
+  @Post('client-file')
+  uploadClientFile(@Body() data: UploadClientFileDto, @Headers('x-office-id') officeId?: string) {
+    const resolved = this.resolveOfficeId(officeId, data.officeId);
+    return this.integrationsService.uploadClientFile(data, resolved);
   }
 }

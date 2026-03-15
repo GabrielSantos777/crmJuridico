@@ -3,6 +3,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { WhatsappMessageDto } from './dto/whatsapp-message.dto';
 import { TriageDto } from './dto/triage.dto';
 import { CreateAppointmentDto } from './dto/appointment.dto';
+import { UploadClientFileDto } from './dto/upload-client-file.dto';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 @Injectable()
 export class IntegrationsService {
@@ -298,5 +301,79 @@ export class IntegrationsService {
         officeId,
       },
     });
+  }
+
+  private resolveFileExtension(mimeType?: string) {
+    const map: Record<string, string> = {
+      'audio/ogg': 'ogg',
+      'audio/ogg; codecs=opus': 'ogg',
+      'audio/mpeg': 'mp3',
+      'audio/mp4': 'mp4',
+      'audio/wav': 'wav',
+      'audio/webm': 'webm',
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'application/pdf': 'pdf',
+    };
+    return map[(mimeType ?? '').toLowerCase()] ?? 'bin';
+  }
+
+  private sanitizeFilename(fileName: string) {
+    return fileName.replace(/[^\w.\-]/g, '_');
+  }
+
+  async uploadClientFile(data: UploadClientFileDto, officeId: string) {
+    officeId = this.requireOfficeId(officeId);
+
+    let clientId = data.clientId;
+    if (!clientId) {
+      if (!data.phone) {
+        return { stored: false, reason: 'phone_or_clientId_required' };
+      }
+      const existing = await this.findClientOrLeadByPhone(data.phone, officeId);
+      if (!existing || existing.type !== 'client') {
+        return { stored: false, reason: 'not_a_client' };
+      }
+      clientId = existing.record.id;
+    }
+
+    const client = await this.prisma.client.findFirst({
+      where: { id: clientId, officeId },
+    });
+    if (!client) {
+      return { stored: false, reason: 'client_not_found' };
+    }
+
+    const cleanedBase64 = (data.base64 ?? '')
+      .replace(/^data:[^;]+;base64,/, '')
+      .trim();
+    const buffer = Buffer.from(cleanedBase64, 'base64');
+    if (!buffer.length) {
+      return { stored: false, reason: 'invalid_base64' };
+    }
+
+    const fallbackExt = this.resolveFileExtension(data.mimeType);
+    const requestedName = data.fileName?.trim() || `arquivo.${fallbackExt}`;
+    const safeOriginalName = this.sanitizeFilename(requestedName);
+    const finalFilename = `${Date.now()}-${safeOriginalName}`;
+    const destDir = path.join(process.cwd(), 'uploads', 'clients', client.id);
+    await fs.mkdir(destDir, { recursive: true });
+
+    const storagePath = path.join(destDir, finalFilename);
+    await fs.writeFile(storagePath, buffer);
+
+    const file = await this.prisma.clientFile.create({
+      data: {
+        clientId: client.id,
+        filename: finalFilename,
+        originalName: safeOriginalName,
+        mimeType: data.mimeType ?? 'application/octet-stream',
+        size: buffer.length,
+        storagePath,
+      },
+    });
+
+    return { stored: true, clientId: client.id, file };
   }
 }
