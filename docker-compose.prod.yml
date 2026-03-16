@@ -6,9 +6,6 @@ services:
     restart: unless-stopped
     env_file:
       - ./.env
-    environment:
-      INTEGRATION_API_KEY: ${INTEGRATION_API_KEY}
-      CRM_INTEGRATION_API_KEY: ${CRM_INTEGRATION_API_KEY}
     ports:
       - "3100:3000"
     depends_on:

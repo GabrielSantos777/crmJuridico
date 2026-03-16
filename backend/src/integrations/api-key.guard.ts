@@ -12,21 +12,22 @@ export class ApiKeyGuard implements CanActivate {
     return String(value).trim().replace(/^['"]|['"]$/g, '');
   }
 
+  private firstHeaderValue(value: unknown) {
+    if (Array.isArray(value)) return value[0];
+    return value;
+  }
+
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest();
-    const rawHeader = req.headers['x-api-key'];
-    const apiKey = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
-    const expected =
-      this.normalize(process.env.INTEGRATION_API_KEY) ||
-      this.normalize(process.env.CRM_INTEGRATION_API_KEY);
+    const headerOfficeId = this.normalize(
+      this.firstHeaderValue(req.headers['x-office-id']),
+    );
+    const queryOfficeId = this.normalize(req.query?.officeId);
+    const bodyOfficeId = this.normalize(req.body?.officeId);
+    const officeId = headerOfficeId || queryOfficeId || bodyOfficeId;
 
-    if (!expected) {
-      throw new UnauthorizedException('Integracao nao configurada');
-    }
-
-    const provided = this.normalize(apiKey);
-    if (!provided || provided !== expected) {
-      throw new UnauthorizedException('Chave invalida');
+    if (!officeId) {
+      throw new UnauthorizedException('officeId obrigatorio');
     }
 
     return true;

@@ -10,7 +10,6 @@ Base URL: `https://SEU_DOMINIO`
   - usuarios normais usam `officeId` vindo do token.
   - `SUPER_ADMIN` precisa enviar `x-office-id` quando o token nao tiver office.
 - Rotas de integracao (`/integrations/*` e `/automation/*`) exigem:
-  - `x-api-key: <INTEGRATION_API_KEY>`
   - `officeId` via `x-office-id` header ou campo/query `officeId` (conforme rota).
 - Regra de senha forte (registro, criacao de usuario, troca de senha):
   - minimo 8 chars, 1 maiuscula, 1 numero, 1 caractere especial.
@@ -205,10 +204,9 @@ Obs:
 
 ---
 
-## Integracoes (API Key)
+## Integracoes (Office ID)
 
 Auth padrao:
-- header `x-api-key` obrigatorio
 - `officeId` obrigatorio (header `x-office-id` ou body/query, conforme rota)
 
 ### Integrations

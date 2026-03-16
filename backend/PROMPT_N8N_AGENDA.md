@@ -20,7 +20,6 @@ REGRAS OBRIGATORIAS:
 COMO CONSULTAR A API:
 - Endpoint: GET /integrations/appointments/availability
 - Headers obrigatorios:
-  - x-api-key: {{INTEGRATION_API_KEY}}
   - x-office-id: {{OFFICE_ID}}
 - Sem query params de data/duracao (a API ja aplica a janela e regras).
 
@@ -51,6 +50,5 @@ Exemplo de chamada HTTP (n8n HTTP Request):
 
 ```http
 GET {{BASE_URL}}/integrations/appointments/availability
-x-api-key: {{INTEGRATION_API_KEY}}
 x-office-id: {{OFFICE_ID}}
 ```
