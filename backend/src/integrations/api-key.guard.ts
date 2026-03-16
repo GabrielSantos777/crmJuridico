@@ -21,12 +21,12 @@ export class ApiKeyGuard implements CanActivate {
       this.normalize(process.env.CRM_INTEGRATION_API_KEY);
 
     if (!expected) {
-      throw new UnauthorizedException('IntegraÃ§Ã£o nÃ£o configurada');
+      throw new UnauthorizedException('Integracao nao configurada');
     }
 
     const provided = this.normalize(apiKey);
     if (!provided || provided !== expected) {
-      throw new UnauthorizedException('Chave invÃ¡lida');
+      throw new UnauthorizedException('Chave invalida');
     }
 
     return true;
