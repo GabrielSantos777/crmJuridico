@@ -1,17 +1,31 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
+  private normalize(value: unknown) {
+    if (!value) return '';
+    return String(value).trim().replace(/^['"]|['"]$/g, '');
+  }
+
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest();
-    const apiKey = req.headers['x-api-key'];
-    const expected = process.env.INTEGRATION_API_KEY;
+    const rawHeader = req.headers['x-api-key'];
+    const apiKey = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+    const expected =
+      this.normalize(process.env.INTEGRATION_API_KEY) ||
+      this.normalize(process.env.CRM_INTEGRATION_API_KEY);
 
     if (!expected) {
       throw new UnauthorizedException('IntegraÃ§Ã£o nÃ£o configurada');
     }
 
-    if (!apiKey || apiKey !== expected) {
+    const provided = this.normalize(apiKey);
+    if (!provided || provided !== expected) {
       throw new UnauthorizedException('Chave invÃ¡lida');
     }
 
