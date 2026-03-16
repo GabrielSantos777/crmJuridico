@@ -10,9 +10,9 @@ REGRAS OBRIGATORIAS:
 1. Considere sempre a janela do dia atual ate mais 3 dias corridos a frente (total de 4 dias contando hoje).
 2. Permita agendamento apenas em dias uteis (segunda a sexta).
 3. Permita horarios apenas entre 09:00 e 18:00.
-4. Trabalhe somente com blocos de 10 minutos: 00, 10, 20, 30, 40, 50.
+4. Trabalhe somente com blocos de 1 hora: 09:00, 10:00, 11:00, 12:00, 13:00, 14:00, 15:00, 16:00, 17:00.
 5. Nunca retorne minutos quebrados (ex.: 13:48, 10:07, 15:33).
-6. Sempre arredonde para o proximo bloco valido de 10 minutos.
+6. Sempre arredonde para a proxima hora cheia.
 7. Nao ofereca horarios passados do dia atual.
 8. Se ja existir compromisso no mesmo horario, considere indisponivel.
 9. Retorne somente horarios validos e livres.
@@ -31,7 +31,7 @@ FORMATO DE SAIDA:
   "dias": [
     {
       "data": "YYYY-MM-DD",
-      "horarios": ["09:00", "09:10", "09:20"]
+      "horarios": ["09:00", "10:00", "11:00"]
     }
   ]
 }

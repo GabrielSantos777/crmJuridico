@@ -228,7 +228,7 @@ Obs para disponibilidade (`GET /integrations/appointments/availability`):
 - janela fixa: dia atual + 3 dias corridos.
 - somente dias uteis (segunda a sexta).
 - horario permitido: `09:00` ate `18:00`.
-- blocos fixos de 10 minutos (`00`, `10`, `20`, `30`, `40`, `50`) com arredondamento para o proximo bloco valido.
+- blocos fixos de 1 hora (`09:00`, `10:00`, `11:00`, ... `17:00`) com arredondamento para a proxima hora cheia.
 - nao retorna horarios passados do dia atual.
 - nao retorna horario com conflito com compromisso `SCHEDULED`.
 

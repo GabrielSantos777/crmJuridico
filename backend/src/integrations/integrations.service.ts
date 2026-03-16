@@ -12,7 +12,7 @@ export class IntegrationsService {
   private readonly availabilityWindowDays = 4; // hoje + 3 dias
   private readonly availabilityWorkStart = '09:00';
   private readonly availabilityWorkEnd = '18:00';
-  private readonly availabilityIntervalMinutes = 10;
+  private readonly availabilityIntervalMinutes = 60;
 
   constructor(private prisma: PrismaService) {}
 
