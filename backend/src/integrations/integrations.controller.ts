@@ -69,27 +69,11 @@ export class IntegrationsController {
 
   @Get('appointments/availability')
   availability(
-    @Query('from') from: string,
-    @Query('to') to: string,
-    @Query('durationMinutes') durationMinutes?: string,
-    @Query('workStart') workStart?: string,
-    @Query('workEnd') workEnd?: string,
-    @Query('intervalMinutes') intervalMinutes?: string,
     @Query('officeId') officeId?: string,
     @Headers('x-office-id') headerOfficeId?: string,
   ) {
     const resolved = this.resolveOfficeId(headerOfficeId, undefined, officeId);
-    const parsedFrom = new Date(from);
-    const parsedTo = new Date(to);
-    return this.integrationsService.listAvailability({
-      from: parsedFrom,
-      to: parsedTo,
-      durationMinutes: Number(durationMinutes ?? 30),
-      workStart: workStart ?? '09:00',
-      workEnd: workEnd ?? '18:00',
-      intervalMinutes: Number(intervalMinutes ?? durationMinutes ?? 30),
-      officeId: resolved,
-    });
+    return this.integrationsService.listAvailability({ officeId: resolved });
   }
 
   @Get('appointments')

@@ -9,6 +9,11 @@ import * as path from 'path';
 
 @Injectable()
 export class IntegrationsService {
+  private readonly availabilityWindowDays = 4; // hoje + 3 dias
+  private readonly availabilityWorkStart = '09:00';
+  private readonly availabilityWorkEnd = '18:00';
+  private readonly availabilityIntervalMinutes = 10;
+
   constructor(private prisma: PrismaService) {}
 
   private normalizePhone(phone?: string) {
@@ -192,23 +197,28 @@ export class IntegrationsService {
   }
 
   async listAvailability(params: {
-    from: Date;
-    to: Date;
-    durationMinutes: number;
-    workStart: string;
-    workEnd: string;
-    intervalMinutes: number;
     officeId: string;
   }) {
     this.requireOfficeId(params.officeId);
-    const { from, to, durationMinutes, workStart, workEnd, intervalMinutes } =
-      params;
+
+    const intervalMinutes = this.availabilityIntervalMinutes;
+    const durationMinutes = intervalMinutes;
+    const now = new Date();
+    const windowStart = this.startOfDay(now);
+    const windowEndExclusive = this.startOfDay(
+      this.addDays(windowStart, this.availabilityWindowDays),
+    );
+
+    const [wsH, wsM] = this.parseClock(this.availabilityWorkStart);
+    const [weH, weM] = this.parseClock(this.availabilityWorkEnd);
+    const firstTodaySlot = this.roundUpToInterval(now, intervalMinutes);
+    const windowEnd = new Date(windowEndExclusive.getTime() - 1);
 
     const existing = await this.prisma.appointment.findMany({
       where: {
         status: 'SCHEDULED',
-        startAt: { lt: to },
-        endAt: { gt: from },
+        startAt: { lt: windowEndExclusive },
+        endAt: { gt: now },
         officeId: params.officeId,
       },
       orderBy: { startAt: 'asc' },
@@ -217,15 +227,14 @@ export class IntegrationsService {
     const slots: { startAt: string; endAt: string }[] = [];
     const msPerMin = 60 * 1000;
 
-    const current = new Date(from);
-    current.setHours(0, 0, 0, 0);
-
-    const endDate = new Date(to);
-    endDate.setHours(0, 0, 0, 0);
+    const current = new Date(windowStart);
+    const endDate = this.addDays(windowStart, this.availabilityWindowDays - 1);
 
     while (current <= endDate) {
-      const [wsH, wsM] = workStart.split(':').map(Number);
-      const [weH, weM] = workEnd.split(':').map(Number);
+      if (!this.isWeekday(current)) {
+        current.setDate(current.getDate() + 1);
+        continue;
+      }
 
       const dayStart = new Date(current);
       dayStart.setHours(wsH, wsM, 0, 0);
@@ -233,15 +242,22 @@ export class IntegrationsService {
       const dayEnd = new Date(current);
       dayEnd.setHours(weH, weM, 0, 0);
 
+      const loopStart =
+        this.isSameDay(current, now) && firstTodaySlot > dayStart
+          ? firstTodaySlot
+          : dayStart;
+
       for (
-        let t = new Date(dayStart);
+        let t = new Date(loopStart);
         t.getTime() + durationMinutes * msPerMin <= dayEnd.getTime();
         t = new Date(t.getTime() + intervalMinutes * msPerMin)
       ) {
         const slotStart = new Date(t);
         const slotEnd = new Date(t.getTime() + durationMinutes * msPerMin);
 
-        if (slotEnd <= from || slotStart >= to) continue;
+        if (slotStart < firstTodaySlot && this.isSameDay(slotStart, now))
+          continue;
+        if (slotStart > windowEnd) continue;
 
         const overlaps = existing.some(
           (a) => slotStart < a.endAt && slotEnd > a.startAt,
@@ -259,6 +275,54 @@ export class IntegrationsService {
     }
 
     return slots;
+  }
+
+  private parseClock(value: string): [number, number] {
+    const [hours, minutes] = value.split(':').map(Number);
+    const safeHours = Number.isFinite(hours) ? hours : 9;
+    const safeMinutes = Number.isFinite(minutes) ? minutes : 0;
+    return [safeHours, safeMinutes];
+  }
+
+  private startOfDay(value: Date) {
+    const day = new Date(value);
+    day.setHours(0, 0, 0, 0);
+    return day;
+  }
+
+  private addDays(value: Date, days: number) {
+    const out = new Date(value);
+    out.setDate(out.getDate() + days);
+    return out;
+  }
+
+  private isWeekday(value: Date) {
+    const dayOfWeek = value.getDay();
+    return dayOfWeek >= 1 && dayOfWeek <= 5;
+  }
+
+  private isSameDay(a: Date, b: Date) {
+    return (
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate()
+    );
+  }
+
+  private roundUpToInterval(value: Date, intervalMinutes: number) {
+    const rounded = new Date(value);
+    rounded.setSeconds(0, 0);
+
+    const minutes = rounded.getMinutes();
+    const next = Math.ceil(minutes / intervalMinutes) * intervalMinutes;
+
+    if (next >= 60) {
+      rounded.setHours(rounded.getHours() + 1, 0, 0, 0);
+      return rounded;
+    }
+
+    rounded.setMinutes(next, 0, 0);
+    return rounded;
   }
 
   async listAppointments(from: Date, to: Date, officeId: string) {

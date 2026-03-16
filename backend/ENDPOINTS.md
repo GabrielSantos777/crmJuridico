@@ -221,10 +221,18 @@ Auth padrao:
 | GET | `/integrations/client-by-phone` | query: `phone`, `officeId?`; header opcional: `x-office-id` |
 | GET | `/integrations/process/latest-by-client` | query: `clientCode`, `officeId?`; header opcional: `x-office-id` |
 | GET | `/integrations/process/latest-by-phone` | query: `phone`, `officeId?`; header opcional: `x-office-id` |
-| GET | `/integrations/appointments/availability` | query: `from`, `to`, `durationMinutes?`, `workStart?`, `workEnd?`, `intervalMinutes?`, `officeId?`; header opcional: `x-office-id` |
+| GET | `/integrations/appointments/availability` | sem query de data/duracao; opcional apenas `officeId?`; header opcional: `x-office-id` |
 | GET | `/integrations/appointments` | query: `from`, `to`, `officeId?`; header opcional: `x-office-id` |
 | POST | `/integrations/appointments` | body: `{ title, startAt, endAt, type?, mode?, status?, description?, phone?, leadId?, clientId?, channel?, officeId? }`; header opcional: `x-office-id` |
 | POST | `/integrations/client-file` | body: `{ clientId? ou phone?, base64, fileName?, mimeType?, officeId? }`; header opcional: `x-office-id` |
+
+Obs para disponibilidade (`GET /integrations/appointments/availability`):
+- janela fixa: dia atual + 3 dias corridos.
+- somente dias uteis (segunda a sexta).
+- horario permitido: `09:00` ate `18:00`.
+- blocos fixos de 10 minutos (`00`, `10`, `20`, `30`, `40`, `50`) com arredondamento para o proximo bloco valido.
+- nao retorna horarios passados do dia atual.
+- nao retorna horario com conflito com compromisso `SCHEDULED`.
 
 ### Automation
 
