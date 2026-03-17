@@ -7,8 +7,10 @@ import {
   ChevronLeft,
   ChevronRight,
   List,
+  Pencil,
   Plus,
   RefreshCw,
+  Trash2,
   Unplug,
   LayoutGrid,
 } from 'lucide-react';
@@ -16,11 +18,13 @@ import { toast } from 'sonner';
 import {
   connectGoogleCalendar,
   createGoogleCalendarEvent,
+  deleteGoogleCalendarEvent,
   disconnectGoogleCalendar,
   getGoogleCalendarStatus,
   type GoogleCalendarEvent,
   type GoogleCalendarStatus,
   listGoogleCalendarEvents,
+  updateGoogleCalendarEvent,
 } from '@/services/googleCalendar';
 
 type ViewMode = 'week' | 'list';
@@ -72,6 +76,8 @@ const toInputDate = (date: Date) => {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 10);
 };
+
+const toInputTime = (date: Date) => `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 
 const parseEventDate = (value: string, isAllDay: boolean) => {
   if (!value) return null;
@@ -125,6 +131,16 @@ export default function AgendaPage() {
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState(() => ({
+    title: '',
+    description: '',
+    location: '',
+    date: toInputDate(new Date()),
+    startTime: '09:00',
+    endTime: '10:00',
+  }));
+  const [selectedEvent, setSelectedEvent] = useState<GoogleCalendarEvent | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editForm, setEditForm] = useState(() => ({
     title: '',
     description: '',
     location: '',
@@ -349,6 +365,90 @@ export default function AgendaPage() {
     }
   };
 
+  const openEventModal = (event: GoogleCalendarEvent) => {
+    const start = parseEventDate(event.startAt, event.isAllDay) || new Date();
+    const end =
+      parseEventDate(event.endAt || '', event.isAllDay) ||
+      new Date(start.getTime() + 60 * 60 * 1000);
+
+    setSelectedEvent(event);
+    setEditForm({
+      title: event.title || '',
+      description: event.description || '',
+      location: event.location || '',
+      date: toInputDate(start),
+      startTime: event.isAllDay ? '09:00' : toInputTime(start),
+      endTime: event.isAllDay ? '10:00' : toInputTime(end),
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const closeEditModal = () => {
+    setSelectedEvent(null);
+    setIsEditModalOpen(false);
+  };
+
+  const handleUpdateEvent = async () => {
+    if (!selectedEvent) return;
+
+    if (!editForm.title || !editForm.date || !editForm.startTime || !editForm.endTime) {
+      toast.error('Preencha titulo, data e horarios');
+      return;
+    }
+
+    const start = new Date(`${editForm.date}T${editForm.startTime}:00`);
+    const end = new Date(`${editForm.date}T${editForm.endTime}:00`);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      toast.error('Horario invalido');
+      return;
+    }
+
+    try {
+      await updateGoogleCalendarEvent(selectedEvent.id, {
+        title: editForm.title,
+        description: editForm.description,
+        location: editForm.location,
+        startAt: start.toISOString(),
+        endAt: end.toISOString(),
+      });
+
+      closeEditModal();
+      setReloadKey((prev) => prev + 1);
+      toast.success('Evento atualizado');
+    } catch (err: any) {
+      if (String(err?.message).includes('google_not_connected')) {
+        setStatus({ connected: false });
+        closeEditModal();
+        toast.error('Sua sessao Google expirou. Conecte novamente.');
+        return;
+      }
+      toast.error('Erro ao atualizar evento');
+    }
+  };
+
+  const handleDeleteEvent = async () => {
+    if (!selectedEvent) return;
+
+    const ok = window.confirm('Excluir este evento?');
+    if (!ok) return;
+
+    try {
+      await deleteGoogleCalendarEvent(selectedEvent.id);
+      closeEditModal();
+      setReloadKey((prev) => prev + 1);
+      toast.success('Evento excluido');
+    } catch (err: any) {
+      if (String(err?.message).includes('google_not_connected')) {
+        setStatus({ connected: false });
+        closeEditModal();
+        toast.error('Sua sessao Google expirou. Conecte novamente.');
+        return;
+      }
+      toast.error('Erro ao excluir evento');
+    }
+  };
+
   const goToday = () => setCurrentDate(new Date());
   const goPrev = () => setCurrentDate((prev) => addDays(prev, viewMode === 'week' ? -7 : -30));
   const goNext = () => setCurrentDate((prev) => addDays(prev, viewMode === 'week' ? 7 : 30));
@@ -551,9 +651,13 @@ export default function AgendaPage() {
                       <div key={key} className="relative border-r border-border dark:border-slate-800">
                         <div className="absolute left-1 right-1 top-1 z-20 space-y-1">
                           {allDayEvents.slice(0, 2).map((event) => (
-                            <div key={event.id} className="truncate rounded bg-secondary px-2 py-0.5 text-[10px] text-secondary-foreground dark:bg-[#2e3a55] dark:text-slate-200">
+                            <button
+                              key={event.id}
+                              onClick={() => openEventModal(event)}
+                              className="w-full truncate rounded bg-secondary px-2 py-0.5 text-left text-[10px] text-secondary-foreground dark:bg-[#2e3a55] dark:text-slate-200"
+                            >
                               {event.title}
-                            </div>
+                            </button>
                           ))}
                         </div>
 
@@ -586,17 +690,15 @@ export default function AgendaPage() {
                             const height = Math.max(24, ((boundedEnd - boundedStart) / 60) * SLOT_HEIGHT);
 
                             return (
-                              <a
+                              <button
                                 key={event.id}
-                                href={event.htmlLink || '#'}
-                                target={event.htmlLink ? '_blank' : undefined}
-                                rel={event.htmlLink ? 'noreferrer' : undefined}
-                                className="absolute left-1 right-1 rounded-md border border-[#7db4ff]/40 bg-[#5f9cf0]/80 px-2 py-1 text-[11px] text-slate-950 shadow"
+                                onClick={() => openEventModal(event)}
+                                className="absolute left-1 right-1 rounded-md border border-[#7db4ff]/40 bg-[#5f9cf0]/80 px-2 py-1 text-left text-[11px] text-slate-950 shadow hover:brightness-95"
                                 style={{ top: `${top}px`, height: `${height}px` }}
                               >
                                 <p className="truncate font-semibold">{event.title}</p>
                                 <p className="text-[10px] opacity-80">{formatEventWhen(event)}</p>
-                              </a>
+                              </button>
                             );
                           })}
                         </div>
@@ -622,11 +724,15 @@ export default function AgendaPage() {
                         </h3>
                         <div className="space-y-2">
                           {list.map((event) => (
-                            <div key={event.id} className="rounded-xl border border-border bg-background p-3 dark:border-slate-700 dark:bg-[#0f131b]">
+                            <button
+                              key={event.id}
+                              onClick={() => openEventModal(event)}
+                              className="w-full rounded-xl border border-border bg-background p-3 text-left transition hover:bg-accent/40 dark:border-slate-700 dark:bg-[#0f131b] dark:hover:bg-slate-800/40"
+                            >
                               <p className="text-sm font-semibold text-foreground dark:text-slate-100">{event.title}</p>
                               <p className="text-xs text-muted-foreground dark:text-slate-400">{formatEventWhen(event)}</p>
                               {event.location && <p className="mt-1 text-xs text-muted-foreground dark:text-slate-500">{event.location}</p>}
-                            </div>
+                            </button>
                           ))}
                         </div>
                       </div>
@@ -696,6 +802,70 @@ export default function AgendaPage() {
             >
               Criar evento
             </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={isEditModalOpen} onClose={closeEditModal} title="Editar Evento">
+        <div className="space-y-4">
+          <FormInput
+            label="Titulo"
+            value={editForm.title}
+            onChange={(e) => setEditForm((prev) => ({ ...prev, title: e.target.value }))}
+          />
+
+          <FormInput
+            label="Descricao"
+            value={editForm.description}
+            onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))}
+          />
+
+          <FormInput
+            label="Local"
+            value={editForm.location}
+            onChange={(e) => setEditForm((prev) => ({ ...prev, location: e.target.value }))}
+          />
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <FormInput
+              label="Data"
+              type="date"
+              value={editForm.date}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, date: e.target.value }))}
+            />
+            <FormInput
+              label="Inicio"
+              type="time"
+              value={editForm.startTime}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, startTime: e.target.value }))}
+            />
+            <FormInput
+              label="Fim"
+              type="time"
+              value={editForm.endTime}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, endTime: e.target.value }))}
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <button
+              onClick={handleDeleteEvent}
+              className="inline-flex items-center gap-2 rounded-lg border border-destructive/40 px-4 py-2 text-sm font-medium text-destructive transition hover:bg-destructive/10"
+            >
+              <Trash2 className="h-4 w-4" /> Excluir
+            </button>
+
+            <div className="flex gap-2">
+              <button onClick={closeEditModal} className="rounded-lg border px-4 py-2 text-sm font-medium">
+                Cancelar
+              </button>
+              <button
+                onClick={handleUpdateEvent}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+              >
+                <Pencil className="h-4 w-4" /> Salvar
+              </button>
+            </div>
           </div>
         </div>
       </Modal>

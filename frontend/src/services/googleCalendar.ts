@@ -42,6 +42,14 @@ export type CreateGoogleCalendarEventInput = {
   endAt: string;
 };
 
+export type UpdateGoogleCalendarEventInput = {
+  title: string;
+  description?: string;
+  location?: string;
+  startAt: string;
+  endAt: string;
+};
+
 declare global {
   interface Window {
     google?: any;
@@ -337,6 +345,80 @@ export const createGoogleCalendarEvent = async (payload: CreateGoogleCalendarEve
 
   const data = await response.json();
   return mapEvent(data);
+};
+
+export const updateGoogleCalendarEvent = async (
+  eventId: string,
+  payload: UpdateGoogleCalendarEventInput,
+) => {
+  const accessToken = await ensureAccessToken(true);
+
+  if (!accessToken) {
+    throw new Error('google_not_connected');
+  }
+
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  const response = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        summary: payload.title,
+        description: payload.description || undefined,
+        location: payload.location || undefined,
+        start: {
+          dateTime: payload.startAt,
+          timeZone: timezone,
+        },
+        end: {
+          dateTime: payload.endAt,
+          timeZone: timezone,
+        },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      clearStoredAuth();
+      throw new Error('google_not_connected');
+    }
+    throw new Error('google_calendar_update_error');
+  }
+
+  const data = await response.json();
+  return mapEvent(data);
+};
+
+export const deleteGoogleCalendarEvent = async (eventId: string) => {
+  const accessToken = await ensureAccessToken(true);
+
+  if (!accessToken) {
+    throw new Error('google_not_connected');
+  }
+
+  const response = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`,
+    {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok && response.status !== 404) {
+    if (response.status === 401 || response.status === 403) {
+      clearStoredAuth();
+      throw new Error('google_not_connected');
+    }
+    throw new Error('google_calendar_delete_error');
+  }
 };
 
 export const listGoogleCalendarUpcoming = async (limit = 5) => {
