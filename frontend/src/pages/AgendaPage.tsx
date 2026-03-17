@@ -358,9 +358,9 @@ export default function AgendaPage() {
 
   return (
     <DashboardLayout title="Agenda">
-      <div className="overflow-hidden rounded-3xl border border-slate-800 bg-[#0f1117] text-slate-100 shadow-2xl">
+      <div className="overflow-hidden rounded-3xl border border-border bg-card text-card-foreground shadow-2xl dark:border-slate-800 dark:bg-[#0f1117] dark:text-slate-100">
         <div className="grid lg:grid-cols-[280px_minmax(0,1fr)]">
-          <aside className="border-b border-slate-800 p-5 lg:border-b-0 lg:border-r">
+          <aside className="border-b border-border p-5 lg:border-b-0 lg:border-r dark:border-slate-800">
             <button
               onClick={() => setIsCreateModalOpen(true)}
               disabled={!status.connected}
@@ -369,15 +369,15 @@ export default function AgendaPage() {
               <Plus className="h-4 w-4" /> Criar evento
             </button>
 
-            <div className="space-y-2 rounded-xl border border-slate-800 bg-[#141922] p-4">
-              <p className="text-xs uppercase tracking-wide text-slate-400">Conta Google</p>
+            <div className="space-y-2 rounded-xl border border-border bg-background p-4 dark:border-slate-800 dark:bg-[#141922]">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground dark:text-slate-400">Conta Google</p>
               {status.connected ? (
                 <>
-                  <p className="text-sm text-slate-200">{status.googleEmail || 'Conectada'}</p>
+                  <p className="text-sm text-foreground dark:text-slate-200">{status.googleEmail || 'Conectada'}</p>
                   <div className="grid gap-2">
                     <button
                       onClick={() => setReloadKey((prev) => prev + 1)}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium hover:bg-slate-800"
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-accent dark:border-slate-700 dark:hover:bg-slate-800"
                     >
                       <RefreshCw className="h-3.5 w-3.5" /> Atualizar
                     </button>
@@ -393,19 +393,19 @@ export default function AgendaPage() {
                 <button
                   onClick={handleConnect}
                   disabled={connecting}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium hover:bg-slate-800 disabled:opacity-60"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-accent disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800"
                 >
                   <Calendar className="h-3.5 w-3.5" /> {connecting ? 'Conectando...' : 'Conectar conta'}
                 </button>
               )}
             </div>
 
-            <div className="mt-5 rounded-xl border border-slate-800 bg-[#141922] p-4">
+            <div className="mt-5 rounded-xl border border-border bg-background p-4 dark:border-slate-800 dark:bg-[#141922]">
               <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-semibold capitalize text-slate-200">{MONTH_LABEL.format(currentDate)}</p>
+                <p className="text-sm font-semibold capitalize text-foreground dark:text-slate-200">{MONTH_LABEL.format(currentDate)}</p>
               </div>
 
-              <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] uppercase text-slate-500">
+              <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] uppercase text-muted-foreground dark:text-slate-500">
                 {DAY_NAMES.map((day) => (
                   <span key={day}>{day.slice(0, 1)}</span>
                 ))}
@@ -428,7 +428,7 @@ export default function AgendaPage() {
                             ? 'bg-[#1f6feb] font-semibold text-white'
                             : isToday
                               ? 'border border-[#1f6feb] text-[#7db4ff]'
-                              : 'text-slate-300 hover:bg-slate-800'
+                              : 'text-foreground hover:bg-accent dark:text-slate-300 dark:hover:bg-slate-800'
                       }`}
                     >
                       {item.label}
@@ -443,7 +443,9 @@ export default function AgendaPage() {
                 <button
                   onClick={() => setViewMode('week')}
                   className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition ${
-                    viewMode === 'week' ? 'bg-[#1f6feb] text-white' : 'border border-slate-700 hover:bg-slate-800'
+                    viewMode === 'week'
+                      ? 'bg-[#1f6feb] text-white'
+                      : 'border border-border hover:bg-accent dark:border-slate-700 dark:hover:bg-slate-800'
                   }`}
                 >
                   <LayoutGrid className="h-3.5 w-3.5" /> Semana
@@ -451,7 +453,9 @@ export default function AgendaPage() {
                 <button
                   onClick={() => setViewMode('list')}
                   className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition ${
-                    viewMode === 'list' ? 'bg-[#1f6feb] text-white' : 'border border-slate-700 hover:bg-slate-800'
+                    viewMode === 'list'
+                      ? 'bg-[#1f6feb] text-white'
+                      : 'border border-border hover:bg-accent dark:border-slate-700 dark:hover:bg-slate-800'
                   }`}
                 >
                   <List className="h-3.5 w-3.5" /> Lista
@@ -472,25 +476,25 @@ export default function AgendaPage() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={goToday}
-                  className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium hover:bg-slate-800"
+                  className="rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-accent dark:border-slate-700 dark:hover:bg-slate-800"
                 >
                   Hoje
                 </button>
                 <button
                   onClick={goPrev}
-                  className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800"
+                  className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-accent dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
                 <button
                   onClick={goNext}
-                  className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800"
+                  className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-accent dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
 
-              <h2 className="text-lg font-semibold capitalize text-slate-100">
+              <h2 className="text-lg font-semibold capitalize text-foreground dark:text-slate-100">
                 {viewMode === 'week'
                   ? `${weekStart.toLocaleDateString('pt-BR')} - ${weekEnd.toLocaleDateString('pt-BR')}`
                   : MONTH_LABEL.format(currentDate)}
@@ -498,17 +502,17 @@ export default function AgendaPage() {
             </div>
 
             {!status.connected ? (
-              <div className="flex h-[520px] items-center justify-center rounded-2xl border border-slate-800 bg-[#141922] text-sm text-slate-400">
+              <div className="flex h-[520px] items-center justify-center rounded-2xl border border-border bg-card text-sm text-muted-foreground dark:border-slate-800 dark:bg-[#141922] dark:text-slate-400">
                 Conecte sua conta Google para visualizar e criar eventos.
               </div>
             ) : loadingEvents ? (
-              <div className="flex h-[520px] items-center justify-center rounded-2xl border border-slate-800 bg-[#141922]">
+              <div className="flex h-[520px] items-center justify-center rounded-2xl border border-border bg-card dark:border-slate-800 dark:bg-[#141922]">
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#1f6feb] border-t-transparent" />
               </div>
             ) : viewMode === 'week' ? (
-              <div className="overflow-auto rounded-2xl border border-slate-800 bg-[#0d1016]">
+              <div className="overflow-auto rounded-2xl border border-border bg-card dark:border-slate-800 dark:bg-[#0d1016]">
                 <div className="grid min-w-[960px] grid-cols-[80px_repeat(7,minmax(0,1fr))]">
-                  <div className="border-b border-r border-slate-800 bg-[#0f131b] p-2 text-[11px] uppercase tracking-wide text-slate-500">
+                  <div className="border-b border-r border-border bg-muted/50 p-2 text-[11px] uppercase tracking-wide text-muted-foreground dark:border-slate-800 dark:bg-[#0f131b] dark:text-slate-500">
                     GMT-03
                   </div>
                   {weekDays.map((day, idx) => {
@@ -516,21 +520,21 @@ export default function AgendaPage() {
                     return (
                       <div
                         key={localDateKey(day)}
-                        className="border-b border-r border-slate-800 bg-[#0f131b] p-2 text-center"
+                        className="border-b border-r border-border bg-muted/50 p-2 text-center dark:border-slate-800 dark:bg-[#0f131b]"
                       >
-                        <p className="text-[11px] uppercase tracking-wide text-slate-500">{DAY_NAMES[idx]}</p>
-                        <p className={`text-xl ${isToday ? 'font-bold text-[#8ab4f8]' : 'text-slate-100'}`}>
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground dark:text-slate-500">{DAY_NAMES[idx]}</p>
+                        <p className={`text-xl ${isToday ? 'font-bold text-[#8ab4f8]' : 'text-foreground dark:text-slate-100'}`}>
                           {day.getDate()}
                         </p>
                       </div>
                     );
                   })}
 
-                  <div className="border-r border-slate-800">
+                  <div className="border-r border-border dark:border-slate-800">
                     {hours.map((hour) => (
                       <div
                         key={hour}
-                        className="h-14 border-b border-slate-800 px-2 pt-1 text-right text-[11px] text-slate-500"
+                        className="h-14 border-b border-border px-2 pt-1 text-right text-[11px] text-muted-foreground dark:border-slate-800 dark:text-slate-500"
                       >
                         {formatHour(hour)}
                       </div>
@@ -544,10 +548,10 @@ export default function AgendaPage() {
                     const timedEvents = dayEvents.filter((event) => !event.isAllDay);
 
                     return (
-                      <div key={key} className="relative border-r border-slate-800">
+                      <div key={key} className="relative border-r border-border dark:border-slate-800">
                         <div className="absolute left-1 right-1 top-1 z-20 space-y-1">
                           {allDayEvents.slice(0, 2).map((event) => (
-                            <div key={event.id} className="truncate rounded bg-[#2e3a55] px-2 py-0.5 text-[10px] text-slate-200">
+                            <div key={event.id} className="truncate rounded bg-secondary px-2 py-0.5 text-[10px] text-secondary-foreground dark:bg-[#2e3a55] dark:text-slate-200">
                               {event.title}
                             </div>
                           ))}
@@ -557,7 +561,7 @@ export default function AgendaPage() {
                           {Array.from({ length: END_HOUR - START_HOUR }, (_, i) => (
                             <div
                               key={i}
-                              className="h-14 border-b border-slate-800"
+                              className="h-14 border-b border-border dark:border-slate-800"
                             />
                           ))}
 
@@ -602,9 +606,9 @@ export default function AgendaPage() {
                 </div>
               </div>
             ) : (
-              <div className="space-y-4 rounded-2xl border border-slate-800 bg-[#141922] p-4">
+              <div className="space-y-4 rounded-2xl border border-border bg-card p-4 dark:border-slate-800 dark:bg-[#141922]">
                 {groupedListEvents.length === 0 ? (
-                  <div className="rounded-xl border border-slate-700 bg-[#0f131b] p-8 text-center text-sm text-slate-400">
+                  <div className="rounded-xl border border-border bg-background p-8 text-center text-sm text-muted-foreground dark:border-slate-700 dark:bg-[#0f131b] dark:text-slate-400">
                     Nenhum evento encontrado
                   </div>
                 ) : (
@@ -613,15 +617,15 @@ export default function AgendaPage() {
                     const dayDate = new Date(year, month - 1, day);
                     return (
                       <div key={dayKey} className="space-y-2">
-                        <h3 className="text-sm font-semibold capitalize text-slate-300">
+                        <h3 className="text-sm font-semibold capitalize text-foreground dark:text-slate-300">
                           {LIST_DAY_LABEL.format(dayDate)}
                         </h3>
                         <div className="space-y-2">
                           {list.map((event) => (
-                            <div key={event.id} className="rounded-xl border border-slate-700 bg-[#0f131b] p-3">
-                              <p className="text-sm font-semibold text-slate-100">{event.title}</p>
-                              <p className="text-xs text-slate-400">{formatEventWhen(event)}</p>
-                              {event.location && <p className="mt-1 text-xs text-slate-500">{event.location}</p>}
+                            <div key={event.id} className="rounded-xl border border-border bg-background p-3 dark:border-slate-700 dark:bg-[#0f131b]">
+                              <p className="text-sm font-semibold text-foreground dark:text-slate-100">{event.title}</p>
+                              <p className="text-xs text-muted-foreground dark:text-slate-400">{formatEventWhen(event)}</p>
+                              {event.location && <p className="mt-1 text-xs text-muted-foreground dark:text-slate-500">{event.location}</p>}
                             </div>
                           ))}
                         </div>
