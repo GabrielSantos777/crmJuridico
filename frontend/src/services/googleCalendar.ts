@@ -81,6 +81,8 @@ const hasValidToken = () => {
   return getStoredExpiresAt() > Date.now();
 };
 
+const isAuthErrorStatus = (status: number) => status === 401 || status === 403;
+
 const ensureConfigured = () => {
   if (!getClientId()) {
     throw new Error('missing_google_client_id');
@@ -139,7 +141,7 @@ const requestToken = async (mode: 'silent' | 'consent' | 'select_account') => {
     });
 
     const prompt =
-      mode === 'silent' ? '' : mode === 'select_account' ? 'select_account consent' : 'consent';
+      mode === 'silent' ? 'none' : mode === 'select_account' ? 'select_account consent' : 'consent';
 
     client.requestAccessToken({ prompt });
   });
@@ -168,8 +170,8 @@ const ensureEmail = async (accessToken: string) => {
   return email;
 };
 
-const ensureAccessToken = async (interactive: boolean) => {
-  if (hasValidToken()) {
+const ensureAccessToken = async (interactive: boolean, forceRefresh = false) => {
+  if (!forceRefresh && hasValidToken()) {
     return getStoredToken() as string;
   }
 
@@ -183,6 +185,52 @@ const ensureAccessToken = async (interactive: boolean) => {
     }
     throw new Error('google_token_error');
   }
+};
+
+const withAuthHeaders = (headers: HeadersInit | undefined, accessToken: string) => {
+  const nextHeaders = new Headers(headers || {});
+  nextHeaders.set('Authorization', `Bearer ${accessToken}`);
+  return nextHeaders;
+};
+
+const fetchWithAuthRetry = async (
+  input: RequestInfo | URL,
+  init: RequestInit,
+  options?: {
+    interactiveAuth?: boolean;
+    allowNotFound?: boolean;
+  },
+) => {
+  const doRequest = async (accessToken: string) =>
+    fetch(input, {
+      ...init,
+      headers: withAuthHeaders(init.headers, accessToken),
+    });
+
+  const accessToken = await ensureAccessToken(Boolean(options?.interactiveAuth));
+  if (!accessToken) {
+    throw new Error('google_not_connected');
+  }
+
+  let response = await doRequest(accessToken);
+
+  if (isAuthErrorStatus(response.status)) {
+    const refreshedToken = await ensureAccessToken(false, true);
+    if (refreshedToken) {
+      response = await doRequest(refreshedToken);
+    }
+  }
+
+  if (options?.allowNotFound && response.status === 404) {
+    return response;
+  }
+
+  if (isAuthErrorStatus(response.status)) {
+    clearStoredAuth();
+    throw new Error('google_not_connected');
+  }
+
+  return response;
 };
 
 const mapEvent = (item: any): GoogleCalendarEvent => {
@@ -266,12 +314,6 @@ export const listGoogleCalendarEvents = async (params?: {
   maxResults?: number;
   interactiveAuth?: boolean;
 }) => {
-  const accessToken = await ensureAccessToken(Boolean(params?.interactiveAuth));
-
-  if (!accessToken) {
-    throw new Error('google_not_connected');
-  }
-
   const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
   url.searchParams.set('singleEvents', 'true');
   url.searchParams.set('orderBy', 'startTime');
@@ -286,17 +328,15 @@ export const listGoogleCalendarEvents = async (params?: {
     url.searchParams.set('q', params.q.trim());
   }
 
-  const response = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
+  const response = await fetchWithAuthRetry(
+    url.toString(),
+    {
+      method: 'GET',
     },
-  });
+    { interactiveAuth: Boolean(params?.interactiveAuth) },
+  );
 
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      clearStoredAuth();
-      throw new Error('google_not_connected');
-    }
     throw new Error('google_calendar_fetch_error');
   }
 
@@ -306,65 +346,13 @@ export const listGoogleCalendarEvents = async (params?: {
 };
 
 export const createGoogleCalendarEvent = async (payload: CreateGoogleCalendarEventInput) => {
-  const accessToken = await ensureAccessToken(true);
-
-  if (!accessToken) {
-    throw new Error('google_not_connected');
-  }
-
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      summary: payload.title,
-      description: payload.description || undefined,
-      location: payload.location || undefined,
-      start: {
-        dateTime: payload.startAt,
-        timeZone: timezone,
-      },
-      end: {
-        dateTime: payload.endAt,
-        timeZone: timezone,
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      clearStoredAuth();
-      throw new Error('google_not_connected');
-    }
-    throw new Error('google_calendar_create_error');
-  }
-
-  const data = await response.json();
-  return mapEvent(data);
-};
-
-export const updateGoogleCalendarEvent = async (
-  eventId: string,
-  payload: UpdateGoogleCalendarEventInput,
-) => {
-  const accessToken = await ensureAccessToken(true);
-
-  if (!accessToken) {
-    throw new Error('google_not_connected');
-  }
-
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-  const response = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`,
+  const response = await fetchWithAuthRetry(
+    'https://www.googleapis.com/calendar/v3/calendars/primary/events',
     {
-      method: 'PATCH',
+      method: 'POST',
       headers: {
-        Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -381,13 +369,48 @@ export const updateGoogleCalendarEvent = async (
         },
       }),
     },
+    { interactiveAuth: true },
   );
 
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      clearStoredAuth();
-      throw new Error('google_not_connected');
-    }
+    throw new Error('google_calendar_create_error');
+  }
+
+  const data = await response.json();
+  return mapEvent(data);
+};
+
+export const updateGoogleCalendarEvent = async (
+  eventId: string,
+  payload: UpdateGoogleCalendarEventInput,
+) => {
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  const response = await fetchWithAuthRetry(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        summary: payload.title,
+        description: payload.description || undefined,
+        location: payload.location || undefined,
+        start: {
+          dateTime: payload.startAt,
+          timeZone: timezone,
+        },
+        end: {
+          dateTime: payload.endAt,
+          timeZone: timezone,
+        },
+      }),
+    },
+    { interactiveAuth: true },
+  );
+
+  if (!response.ok) {
     throw new Error('google_calendar_update_error');
   }
 
@@ -396,27 +419,15 @@ export const updateGoogleCalendarEvent = async (
 };
 
 export const deleteGoogleCalendarEvent = async (eventId: string) => {
-  const accessToken = await ensureAccessToken(true);
-
-  if (!accessToken) {
-    throw new Error('google_not_connected');
-  }
-
-  const response = await fetch(
+  const response = await fetchWithAuthRetry(
     `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`,
     {
       method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
     },
+    { interactiveAuth: true, allowNotFound: true },
   );
 
   if (!response.ok && response.status !== 404) {
-    if (response.status === 401 || response.status === 403) {
-      clearStoredAuth();
-      throw new Error('google_not_connected');
-    }
     throw new Error('google_calendar_delete_error');
   }
 };
