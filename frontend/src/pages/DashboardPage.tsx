@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { CardMetric } from '@/components/CardMetric';
 import { UserPlus, Users, TrendingUp, DollarSign, CalendarClock } from 'lucide-react';
 import { getMetrics, listDeadlines, listProcesses } from '@/services/api';
-import { isGoogleCalendarConnected, listGoogleCalendarUpcoming } from '@/services/googleCalendar';
+import { getGoogleCalendarStatus, listGoogleCalendarUpcoming } from '@/services/googleCalendar';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -64,7 +64,9 @@ export default function DashboardPage() {
 
     const loadUpcoming = async () => {
       try {
-        const connected = isGoogleCalendarConnected();
+        const status = await getGoogleCalendarStatus();
+        const connected = Boolean(status.connected);
+
         if (!active) return;
         setGoogleConnected(connected);
 
@@ -111,9 +113,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const checkReminders = async () => {
-      if (!isGoogleCalendarConnected()) return;
-
       try {
+        const status = await getGoogleCalendarStatus();
+        if (!status.connected) return;
+
         const items = await listGoogleCalendarUpcoming(20);
         const now = new Date();
         items.forEach((a: any) => {
@@ -165,8 +168,8 @@ export default function DashboardPage() {
                 m.key === 'conversionRate'
                   ? `${metrics[m.key]}%`
                   : m.key === 'estimatedRevenue'
-                    ? `R$ ${metrics[m.key]}`
-                    : metrics[m.key]
+                  ? `R$ ${metrics[m.key]}`
+                  : metrics[m.key]
               }
               icon={m.icon}
               trend=""
@@ -245,7 +248,7 @@ export default function DashboardPage() {
                     <div>
                       <p className="text-sm font-medium text-foreground">{d.title}</p>
                       <p className="text-xs text-muted-foreground">
-                        {d.process?.code ? `Proc. ${d.process.code} � ` : ''}Vence em {due.toLocaleDateString('pt-BR')}
+                        {d.process?.code ? `Proc. ${d.process.code} • ` : ''}Vence em {due.toLocaleDateString('pt-BR')}
                       </p>
                     </div>
                     <span className={`status-badge ${urgent ? 'status-urgent' : 'status-info'}`}>
@@ -261,3 +264,4 @@ export default function DashboardPage() {
     </DashboardLayout>
   );
 }
+
