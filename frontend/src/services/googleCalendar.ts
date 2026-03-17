@@ -94,7 +94,7 @@ const loadGoogleScript = async () => {
   await gisLoader;
 };
 
-const requestToken = async (interactive: boolean) => {
+const requestToken = async (mode: 'silent' | 'consent' | 'select_account') => {
   ensureConfigured();
   await loadGoogleScript();
 
@@ -116,7 +116,14 @@ const requestToken = async (interactive: boolean) => {
       },
     });
 
-    client.requestAccessToken({ prompt: interactive ? 'consent' : '' });
+    const prompt =
+      mode === 'silent'
+        ? ''
+        : mode === 'select_account'
+          ? 'select_account consent'
+          : 'consent';
+
+    client.requestAccessToken({ prompt });
   });
 };
 
@@ -129,7 +136,7 @@ const ensureAccessToken = async (interactive: boolean) => {
     return null;
   }
 
-  const token = await requestToken(true);
+  const token = await requestToken('consent');
   saveToken(token.accessToken, token.expiresIn);
   return token.accessToken;
 };
@@ -172,7 +179,8 @@ export const isGoogleCalendarConnected = () => hasValidToken();
 export const getGoogleCalendarEmail = () => sessionStorage.getItem(GOOGLE_EMAIL_KEY);
 
 export const connectGoogleCalendar = async () => {
-  const token = await requestToken(true);
+  // Always force account chooser so the user can pick which Google account to connect.
+  const token = await requestToken('select_account');
   saveToken(token.accessToken, token.expiresIn);
 
   const email = await fetchGoogleEmail(token.accessToken);
