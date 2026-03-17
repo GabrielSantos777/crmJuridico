@@ -16,6 +16,7 @@ import { ReportsModule } from './reports/reports.module';
 import { KanbanModule } from './kanban/kanban.module';
 import { GroupsModule } from './groups/groups.module';
 import { OfficesModule } from './offices/offices.module';
+import { GoogleCalendarModule } from './google-calendar/google-calendar.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { OfficesModule } from './offices/offices.module';
     KanbanModule,
     GroupsModule,
     OfficesModule,
+    GoogleCalendarModule,
     ConfigModule.forRoot({
       isGlobal: true,
     }),

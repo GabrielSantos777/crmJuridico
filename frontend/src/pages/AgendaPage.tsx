@@ -1,316 +1,362 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { DashboardLayout } from '@/components/DashboardLayout';
-import { Modal } from '@/components/Modal';
 import { FormInput } from '@/components/FormInput';
-import { Calendar, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Calendar, Link as LinkIcon, RefreshCw, Unplug } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  listAppointments,
-  createAppointment,
-  updateAppointment,
-  deleteAppointment,
+  disconnectGoogleCalendar,
+  getGoogleCalendarAuthUrl,
+  getGoogleCalendarStatus,
+  listGoogleCalendarEvents,
 } from '@/services/api';
 
-type Appointment = {
+type GoogleCalendarStatus = {
+  connected: boolean;
+  googleEmail?: string | null;
+  expiresAt?: string | null;
+  connectedAt?: string | null;
+  hasRefreshToken?: boolean;
+};
+
+type GoogleCalendarEvent = {
   id: string;
   title: string;
-  description?: string;
-  type: 'CONSULTATION' | 'AUDIENCE' | 'DOCUMENT' | 'MEETING' | 'OTHER';
-  mode: 'ONLINE' | 'IN_PERSON';
+  description?: string | null;
+  location?: string | null;
+  status: 'confirmed' | 'tentative' | 'cancelled' | string;
+  htmlLink?: string | null;
   startAt: string;
-  endAt: string;
-  status: 'SCHEDULED' | 'CANCELLED' | 'COMPLETED' | 'AVAILABLE';
-  location?: string;
-  notes?: string;
+  endAt?: string | null;
+  isAllDay: boolean;
+  organizerEmail?: string | null;
+  creatorEmail?: string | null;
+  source: 'GOOGLE';
 };
 
-const statusClass = (s: string) => {
-  switch (s) {
-    case 'AVAILABLE': return 'status-info';
-    case 'SCHEDULED': return 'status-active';
-    case 'CANCELLED': return 'status-urgent';
-    case 'COMPLETED': return 'status-pending';
-    default: return '';
+const statusClass = (status: string) => {
+  switch (status) {
+    case 'confirmed':
+      return 'status-active';
+    case 'tentative':
+      return 'status-info';
+    case 'cancelled':
+      return 'status-urgent';
+    default:
+      return 'status-pending';
   }
 };
 
-const typeLabel = (t: Appointment['type']) => {
-  switch (t) {
-    case 'CONSULTATION': return 'Consulta';
-    case 'AUDIENCE': return 'Audiencia';
-    case 'DOCUMENT': return 'Documento';
-    case 'MEETING': return 'Reuniao';
-    default: return 'Outro';
+const statusLabel = (status: string) => {
+  switch (status) {
+    case 'confirmed':
+      return 'Confirmado';
+    case 'tentative':
+      return 'Pendente';
+    case 'cancelled':
+      return 'Cancelado';
+    default:
+      return status;
   }
 };
 
-const modeLabel = (m: Appointment['mode']) => (m === 'ONLINE' ? 'Online' : 'Presencial');
+const toInputDate = (date: Date) => {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+};
+
+const toRangeDateTime = (date: string, endOfDay = false) => {
+  if (!date) return undefined;
+  const clock = endOfDay ? 'T23:59:59.999' : 'T00:00:00.000';
+  return new Date(`${date}${clock}`).toISOString();
+};
+
+const formatEventWhen = (event: GoogleCalendarEvent) => {
+  if (event.isAllDay) {
+    const [year, month, day] = event.startAt.split('-').map(Number);
+    if (year && month && day) {
+      const value = new Date(year, month - 1, day);
+      return `${value.toLocaleDateString('pt-BR')} (dia inteiro)`;
+    }
+    return 'Dia inteiro';
+  }
+
+  const start = new Date(event.startAt);
+  return `${start.toLocaleDateString('pt-BR')} as ${start.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })}`;
+};
 
 export default function AgendaPage() {
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<GoogleCalendarStatus>({ connected: false });
+  const [events, setEvents] = useState<GoogleCalendarEvent[]>([]);
+  const [loadingStatus, setLoadingStatus] = useState(true);
+  const [loadingEvents, setLoadingEvents] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editing, setEditing] = useState<Appointment | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Appointment | null>(null);
 
-  const [form, setForm] = useState({
-    title: '',
-    description: '',
-    date: '',
-    startTime: '',
-    endTime: '',
-    type: 'CONSULTATION',
-    mode: 'ONLINE',
-    status: 'SCHEDULED',
-    location: '',
-    notes: '',
+  const [range, setRange] = useState(() => {
+    const from = new Date();
+    const to = new Date();
+    to.setDate(to.getDate() + 30);
+
+    return {
+      from: toInputDate(from),
+      to: toInputDate(to),
+    };
   });
 
-  const load = async () => {
-    setLoading(true);
+  const handleOAuthFeedback = () => {
+    const url = new URL(window.location.href);
+    const google = url.searchParams.get('google');
+    const reason = url.searchParams.get('reason');
+
+    if (google === 'connected') {
+      toast.success('Conta Google conectada com sucesso');
+    }
+
+    if (google === 'error') {
+      toast.error(reason ? `Falha ao conectar Google: ${reason}` : 'Falha ao conectar Google Calendar');
+    }
+
+    if (google) {
+      url.searchParams.delete('google');
+      url.searchParams.delete('reason');
+      window.history.replaceState({}, '', url.toString());
+    }
+  };
+
+  const loadStatus = async () => {
+    setLoadingStatus(true);
     try {
-      const from = new Date();
-      const to = new Date();
-      to.setDate(to.getDate() + 30);
-      const data = await listAppointments({
-        from: from.toISOString(),
-        to: to.toISOString(),
-      });
-      setAppointments(data);
+      const data = await getGoogleCalendarStatus();
+      setStatus(data);
+      return data;
     } catch {
-      toast.error('Erro ao carregar agenda');
+      toast.error('Erro ao carregar conexao com Google Calendar');
+      const fallback = { connected: false } as GoogleCalendarStatus;
+      setStatus(fallback);
+      return fallback;
     } finally {
-      setLoading(false);
+      setLoadingStatus(false);
+    }
+  };
+
+  const loadEvents = async (connectedOverride?: boolean) => {
+    const connected = connectedOverride ?? status.connected;
+    if (!connected) {
+      setEvents([]);
+      return;
+    }
+
+    setLoadingEvents(true);
+    try {
+      const data = await listGoogleCalendarEvents({
+        from: toRangeDateTime(range.from),
+        to: toRangeDateTime(range.to, true),
+        maxResults: 250,
+      });
+      setEvents(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      const message = String(err?.response?.data?.message ?? '');
+      if (message.toLowerCase().includes('nao conectada')) {
+        setStatus({ connected: false });
+        setEvents([]);
+      }
+      toast.error('Erro ao carregar eventos do Google Calendar');
+    } finally {
+      setLoadingEvents(false);
+    }
+  };
+
+  const bootstrap = async () => {
+    handleOAuthFeedback();
+    const currentStatus = await loadStatus();
+    if (currentStatus.connected) {
+      await loadEvents(true);
     }
   };
 
   useEffect(() => {
-    load();
+    bootstrap();
   }, []);
 
-  const resetForm = () => {
-    setForm({
-      title: '',
-      description: '',
-      date: '',
-      startTime: '',
-      endTime: '',
-      type: 'CONSULTATION',
-      mode: 'ONLINE',
-      status: 'SCHEDULED',
-      location: '',
-      notes: '',
-    });
-    setEditing(null);
-  };
-
-  const openEdit = (a: Appointment) => {
-    const start = new Date(a.startAt);
-    const end = new Date(a.endAt);
-    setEditing(a);
-    setForm({
-      title: a.title,
-      description: a.description || '',
-      date: start.toISOString().slice(0, 10),
-      startTime: start.toTimeString().slice(0, 5),
-      endTime: end.toTimeString().slice(0, 5),
-      type: a.type,
-      mode: a.mode,
-      status: a.status,
-      location: a.location || '',
-      notes: a.notes || '',
-    });
-    setIsModalOpen(true);
-  };
-
-  const handleSave = async () => {
-    if (!form.title || !form.date || !form.startTime || !form.endTime) {
-      toast.error('Preencha titulo, data e horario');
-      return;
+  const filteredEvents = useMemo(() => {
+    const text = search.trim().toLowerCase();
+    if (!text) {
+      return events;
     }
-    const startAt = new Date(`${form.date}T${form.startTime}:00`);
-    const endAt = new Date(`${form.date}T${form.endTime}:00`);
 
-    const payload = {
-      title: form.title,
-      description: form.description || undefined,
-      startAt: startAt.toISOString(),
-      endAt: endAt.toISOString(),
-      type: form.type,
-      mode: form.mode,
-      status: form.status,
-      location: form.location || undefined,
-      notes: form.notes || undefined,
-    };
+    return events.filter((event) => {
+      return (
+        event.title.toLowerCase().includes(text) ||
+        String(event.description ?? '').toLowerCase().includes(text) ||
+        String(event.location ?? '').toLowerCase().includes(text)
+      );
+    });
+  }, [events, search]);
 
+  const handleConnect = async () => {
+    setConnecting(true);
     try {
-      if (editing) {
-        await updateAppointment(editing.id, payload);
-        toast.success('Evento atualizado');
-      } else {
-        await createAppointment(payload);
-        toast.success('Evento criado');
+      const data = await getGoogleCalendarAuthUrl();
+      if (!data?.url) {
+        throw new Error('missing_auth_url');
       }
-      setIsModalOpen(false);
-      resetForm();
-      await load();
+      window.location.href = data.url;
     } catch {
-      toast.error('Erro ao salvar evento');
+      toast.error('Nao foi possivel iniciar conexao com Google Calendar');
+      setConnecting(false);
     }
   };
 
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
+  const handleDisconnect = async () => {
+    const ok = window.confirm('Deseja desconectar sua conta Google Calendar deste usuario?');
+    if (!ok) return;
+
     try {
-      await deleteAppointment(deleteTarget.id);
-      toast.success('Evento removido');
-      await load();
+      await disconnectGoogleCalendar();
+      setStatus({ connected: false });
+      setEvents([]);
+      toast.success('Conta Google desconectada');
     } catch {
-      toast.error('Erro ao remover evento');
-    } finally {
-      setDeleteTarget(null);
+      toast.error('Erro ao desconectar conta Google');
     }
   };
-
-  const filtered = useMemo(() => {
-    let list = appointments;
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter((a) => a.title.toLowerCase().includes(q));
-    }
-    if (filterStatus) {
-      list = list.filter((a) => a.status === filterStatus);
-    }
-    return list;
-  }, [appointments, search, filterStatus]);
 
   return (
     <DashboardLayout title="Agenda">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">{appointments.length} eventos nos proximos 30 dias</div>
-        <button
-          onClick={() => { resetForm(); setIsModalOpen(true); }}
-          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" /> Novo Evento
-        </button>
-      </div>
+      <div className="mb-4 rounded-xl border bg-card p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-card-foreground">Google Calendar</h3>
+            <p className="text-sm text-muted-foreground">
+              A agenda agora e exibida direto da sua conta Google conectada.
+            </p>
+            {status.connected && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Conectado como <span className="font-medium text-foreground">{status.googleEmail || 'Conta Google'}</span>
+              </p>
+            )}
+          </div>
 
-      <div className="mb-4 grid gap-4 md:grid-cols-2">
-        <FormInput label="Pesquisar" placeholder="Buscar por titulo" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <div>
-          <label className="mb-1 block text-sm font-medium text-foreground">Filtro</label>
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="h-10 w-full rounded-lg border bg-background px-3 text-sm"
-          >
-            <option value="">Todos</option>
-            <option value="AVAILABLE">Disponivel</option>
-            <option value="SCHEDULED">Agendado</option>
-            <option value="COMPLETED">Concluido</option>
-            <option value="CANCELLED">Cancelado</option>
-          </select>
+          <div className="flex flex-wrap items-center gap-2">
+            {status.connected ? (
+              <>
+                <button
+                  onClick={loadEvents}
+                  disabled={loadingEvents}
+                  className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:bg-secondary disabled:opacity-60"
+                >
+                  <RefreshCw className={`h-4 w-4 ${loadingEvents ? 'animate-spin' : ''}`} /> Atualizar
+                </button>
+                <a
+                  href="https://calendar.google.com/calendar/u/0/r"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:bg-secondary"
+                >
+                  <LinkIcon className="h-4 w-4" /> Abrir no Google
+                </a>
+                <button
+                  onClick={handleDisconnect}
+                  className="inline-flex items-center gap-2 rounded-lg border border-destructive/40 px-4 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
+                >
+                  <Unplug className="h-4 w-4" /> Desconectar
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={handleConnect}
+                disabled={connecting || loadingStatus}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+              >
+                <Calendar className="h-4 w-4" /> {connecting ? 'Conectando...' : 'Conectar Google Calendar'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {loading ? (
+      {status.connected && (
+        <div className="mb-4 grid gap-4 md:grid-cols-3">
+          <FormInput
+            label="Pesquisar"
+            placeholder="Titulo, descricao ou local"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <FormInput
+            label="Data inicial"
+            type="date"
+            value={range.from}
+            onChange={(e) => setRange((prev) => ({ ...prev, from: e.target.value }))}
+          />
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <FormInput
+                label="Data final"
+                type="date"
+                value={range.to}
+                onChange={(e) => setRange((prev) => ({ ...prev, to: e.target.value }))}
+              />
+            </div>
+            <button
+              onClick={loadEvents}
+              disabled={loadingEvents}
+              className="h-10 rounded-lg border px-4 text-sm font-medium transition-colors hover:bg-secondary disabled:opacity-60"
+            >
+              Buscar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!status.connected ? (
+        <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
+          Conecte sua conta Google para visualizar os eventos reais da sua agenda.
+        </div>
+      ) : loadingEvents ? (
         <div className="flex h-48 items-center justify-center">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((e) => (
-            <div key={e.id} className="flex items-center gap-4 rounded-xl border bg-card p-4">
+          {filteredEvents.map((event) => (
+            <div key={event.id} className="flex items-center gap-4 rounded-xl border bg-card p-4">
               <div className="flex h-12 w-12 flex-col items-center justify-center rounded-lg bg-secondary">
                 <Calendar className="h-5 w-5 text-muted-foreground" />
               </div>
+
               <div className="flex-1">
-                <p className="text-sm font-semibold text-foreground">{e.title}</p>
-                <p className="text-xs text-muted-foreground">
-                  {new Date(e.startAt).toLocaleDateString('pt-BR')} as {new Date(e.startAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                </p>
-                {e.location && (e.location.startsWith('http://') || e.location.startsWith('https://')) && (
-                  <a className="text-xs text-primary underline" href={e.location} target="_blank" rel="noreferrer">
-                    Abrir link da reuniao
+                <p className="text-sm font-semibold text-foreground">{event.title}</p>
+                <p className="text-xs text-muted-foreground">{formatEventWhen(event)}</p>
+                {event.location && <p className="text-xs text-muted-foreground">{event.location}</p>}
+                {event.htmlLink && (
+                  <a
+                    className="text-xs text-primary underline"
+                    href={event.htmlLink}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Abrir evento no Google
                   </a>
                 )}
-                <p className="text-xs text-muted-foreground">
-                  {typeLabel(e.type)} • {modeLabel(e.mode)}
-                </p>
               </div>
-              <span className={`status-badge ${statusClass(e.status)}`}>{e.status}</span>
-              <div className="flex items-center gap-1">
-                <button onClick={() => openEdit(e)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground">
-                  <Pencil className="h-4 w-4" />
-                </button>
-                <button onClick={() => setDeleteTarget(e)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
+
+              <span className={`status-badge ${statusClass(event.status)}`}>
+                {statusLabel(event.status)}
+              </span>
             </div>
           ))}
-          {filtered.length === 0 && (
-            <div className="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">Nenhum evento encontrado</div>
+
+          {filteredEvents.length === 0 && (
+            <div className="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">
+              Nenhum evento encontrado no periodo selecionado
+            </div>
           )}
         </div>
       )}
-
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editing ? 'Editar Evento' : 'Novo Evento'}>
-        <div className="space-y-4">
-          <FormInput label="Titulo" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Consulta, audiencia, etc" />
-          <FormInput label="Descricao" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Detalhes" />
-          <div className="grid gap-4 md:grid-cols-3">
-            <FormInput label="Data" type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
-            <FormInput label="Inicio" type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} />
-            <FormInput label="Fim" type="time" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} />
-          </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Tipo</label>
-              <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="h-10 w-full rounded-lg border bg-background px-3 text-sm">
-                <option value="CONSULTATION">Consulta</option>
-                <option value="AUDIENCE">Audiencia</option>
-                <option value="DOCUMENT">Documento</option>
-                <option value="MEETING">Reuniao</option>
-                <option value="OTHER">Outro</option>
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Modo</label>
-              <select value={form.mode} onChange={(e) => setForm({ ...form, mode: e.target.value })} className="h-10 w-full rounded-lg border bg-background px-3 text-sm">
-                <option value="ONLINE">Online</option>
-                <option value="IN_PERSON">Presencial</option>
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Status</label>
-              <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="h-10 w-full rounded-lg border bg-background px-3 text-sm">
-                <option value="SCHEDULED">Agendado</option>
-                <option value="AVAILABLE">Disponivel</option>
-                <option value="COMPLETED">Concluido</option>
-                <option value="CANCELLED">Cancelado</option>
-              </select>
-            </div>
-          </div>
-          <FormInput label="Local" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Endereco ou link" />
-          <FormInput label="Notas" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Observacoes internas" />
-          <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setIsModalOpen(false)} className="rounded-lg border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary">Cancelar</button>
-            <button onClick={handleSave} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">Salvar</button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Confirmar exclusao">
-        <p className="text-sm text-muted-foreground">Tem certeza que deseja excluir este evento permanentemente?</p>
-        <div className="mt-6 flex justify-end gap-3">
-          <button onClick={() => setDeleteTarget(null)} className="rounded-lg border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary">Cancelar</button>
-          <button onClick={handleDelete} className="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground transition-colors hover:bg-destructive/90">Excluir</button>
-        </div>
-      </Modal>
     </DashboardLayout>
   );
 }

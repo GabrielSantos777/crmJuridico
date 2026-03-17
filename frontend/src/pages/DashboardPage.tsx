@@ -1,8 +1,14 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { CardMetric } from '@/components/CardMetric';
 import { UserPlus, Users, TrendingUp, DollarSign, CalendarClock } from 'lucide-react';
-import { getMetrics, listDeadlines, listProcesses, listUpcomingAppointments } from '@/services/api';
+import {
+  getGoogleCalendarStatus,
+  getMetrics,
+  listDeadlines,
+  listGoogleCalendarUpcoming,
+  listProcesses,
+} from '@/services/api';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -18,6 +24,23 @@ type Upcoming = {
   title: string;
   startAt: string;
   status: string;
+  isAllDay?: boolean;
+};
+
+const formatUpcomingWhen = (event: Upcoming) => {
+  if (event.isAllDay) {
+    const [year, month, day] = event.startAt.split('-').map(Number);
+    if (year && month && day) {
+      return `${new Date(year, month - 1, day).toLocaleDateString('pt-BR')} (dia inteiro)`;
+    }
+    return 'Dia inteiro';
+  }
+
+  const start = new Date(event.startAt);
+  return `${start.toLocaleDateString('pt-BR')} as ${start.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })}`;
 };
 
 export default function DashboardPage() {
@@ -29,11 +52,13 @@ export default function DashboardPage() {
     estimatedRevenue: 0,
   });
   const [upcoming, setUpcoming] = useState<Upcoming[]>([]);
+  const [googleConnected, setGoogleConnected] = useState<boolean | null>(null);
   const [recentProcesses, setRecentProcesses] = useState<any[]>([]);
   const [upcomingDeadlines, setUpcomingDeadlines] = useState<any[]>([]);
 
   useEffect(() => {
     let active = true;
+
     if (user?.role !== 'BASIC' && user?.role !== 'UNASSIGNED') {
       getMetrics()
         .then((data) => {
@@ -41,25 +66,50 @@ export default function DashboardPage() {
         })
         .catch(() => {});
     }
-    listUpcomingAppointments(5)
-      .then((data) => {
+
+    const loadUpcoming = async () => {
+      try {
+        const status = await getGoogleCalendarStatus();
+        if (!active) return;
+        const connected = Boolean(status?.connected);
+        setGoogleConnected(connected);
+
+        if (!connected) {
+          setUpcoming([]);
+          return;
+        }
+
+        const data = await listGoogleCalendarUpcoming(5);
         if (active) setUpcoming(data);
-      })
-      .catch(() => {});
+      } catch {
+        if (!active) return;
+        setGoogleConnected(false);
+        setUpcoming([]);
+      }
+    };
+
+    loadUpcoming();
+
     listProcesses()
       .then((data) => {
         if (!active) return;
-        const sorted = [...data].sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        const sorted = [...data].sort(
+          (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        );
         setRecentProcesses(sorted.slice(0, 5));
       })
       .catch(() => {});
+
     listDeadlines()
       .then((data) => {
         if (!active) return;
-        const sorted = [...data].sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+        const sorted = [...data].sort(
+          (a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
+        );
         setUpcomingDeadlines(sorted.slice(0, 5));
       })
       .catch(() => {});
+
     return () => {
       active = false;
     };
@@ -68,10 +118,12 @@ export default function DashboardPage() {
   useEffect(() => {
     const checkReminders = async () => {
       try {
-        const items = await listUpcomingAppointments(20);
+        const items = await listGoogleCalendarUpcoming(20);
         const now = new Date();
         items.forEach((a: any) => {
-          const start = new Date(a.startAt);
+          const start = a.isAllDay ? new Date(`${a.startAt}T09:00:00`) : new Date(a.startAt);
+          if (Number.isNaN(start.getTime())) return;
+
           const diffMs = start.getTime() - now.getTime();
           const diffMin = Math.round(diffMs / 60000);
 
@@ -117,8 +169,8 @@ export default function DashboardPage() {
                 m.key === 'conversionRate'
                   ? `${metrics[m.key]}%`
                   : m.key === 'estimatedRevenue'
-                  ? `R$ ${metrics[m.key]}`
-                  : metrics[m.key]
+                    ? `R$ ${metrics[m.key]}`
+                    : metrics[m.key]
               }
               icon={m.icon}
               trend=""
@@ -134,15 +186,17 @@ export default function DashboardPage() {
           <h3 className="mb-4 text-base font-semibold text-card-foreground">Agenda Proxima</h3>
           <div className="space-y-3">
             {upcoming.length === 0 ? (
-              <div className="rounded-lg bg-secondary p-3 text-sm text-muted-foreground">Nenhum evento agendado</div>
+              <div className="rounded-lg bg-secondary p-3 text-sm text-muted-foreground">
+                {googleConnected === false
+                  ? 'Conecte seu Google Calendar na Agenda para exibir eventos'
+                  : 'Nenhum evento agendado'}
+              </div>
             ) : (
               upcoming.map((e) => (
                 <div key={e.id} className="flex items-center justify-between rounded-lg bg-secondary p-3">
                   <div>
                     <p className="text-sm font-medium text-foreground">{e.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(e.startAt).toLocaleDateString('pt-BR')} as {new Date(e.startAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
+                    <p className="text-xs text-muted-foreground">{formatUpcomingWhen(e)}</p>
                   </div>
                   <CalendarClock className="h-4 w-4 text-muted-foreground" />
                 </div>
@@ -165,7 +219,9 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">{p.area}</span>
-                    <span className={`status-badge ${String(p.status).toLowerCase().includes('andamento') ? 'status-active' : 'status-pending'}`}>
+                    <span
+                      className={`status-badge ${String(p.status).toLowerCase().includes('andamento') ? 'status-active' : 'status-pending'}`}
+                    >
                       {p.status}
                     </span>
                   </div>
@@ -186,11 +242,14 @@ export default function DashboardPage() {
                 const diffDays = Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
                 const urgent = diffDays <= 3;
                 return (
-                  <div key={d.id} className={`flex items-center justify-between rounded-lg p-3 ${urgent ? 'bg-destructive/5 border border-destructive/20' : 'bg-secondary'}`}>
+                  <div
+                    key={d.id}
+                    className={`flex items-center justify-between rounded-lg p-3 ${urgent ? 'bg-destructive/5 border border-destructive/20' : 'bg-secondary'}`}
+                  >
                     <div>
                       <p className="text-sm font-medium text-foreground">{d.title}</p>
                       <p className="text-xs text-muted-foreground">
-                        {d.process?.code ? `Proc. ${d.process.code} • ` : ''}Vence em {due.toLocaleDateString('pt-BR')}
+                        {d.process?.code ? `Proc. ${d.process.code} � ` : ''}Vence em {due.toLocaleDateString('pt-BR')}
                       </p>
                     </div>
                     <span className={`status-badge ${urgent ? 'status-urgent' : 'status-info'}`}>

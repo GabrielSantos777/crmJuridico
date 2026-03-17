@@ -166,6 +166,38 @@ export async function deleteAppointment(id: string) {
   return data;
 }
 
+export async function getGoogleCalendarAuthUrl() {
+  const { data } = await api.get('/google-calendar/auth-url');
+  return data;
+}
+
+export async function getGoogleCalendarStatus() {
+  const { data } = await api.get('/google-calendar/status');
+  return data;
+}
+
+export async function listGoogleCalendarEvents(params?: {
+  from?: string;
+  to?: string;
+  q?: string;
+  maxResults?: number;
+}) {
+  const { data } = await api.get('/google-calendar/events', { params });
+  return data;
+}
+
+export async function listGoogleCalendarUpcoming(limit = 5) {
+  const { data } = await api.get('/google-calendar/upcoming', {
+    params: { limit },
+  });
+  return data;
+}
+
+export async function disconnectGoogleCalendar() {
+  const { data } = await api.delete('/google-calendar/disconnect');
+  return data;
+}
+
 export async function listProcesses() {
   const { data } = await api.get("/processes");
   return data;

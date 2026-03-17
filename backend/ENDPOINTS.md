@@ -105,6 +105,17 @@ Obs:
 | POST | `/appointments/:id/book` | JWT + Office | path: `id`, body parcial do DTO de appointment |
 | DELETE | `/appointments/:id` | JWT + Office | path: `id` |
 
+### Google Calendar
+
+| Metodo | Endpoint | Auth | Recebe |
+|---|---|---|---|
+| GET | `/google-calendar/auth-url` | JWT + Office | nada; retorna `{ url }` para iniciar OAuth |
+| GET | `/google-calendar/status` | JWT + Office | nada |
+| GET | `/google-calendar/events` | JWT + Office | query: `from?`, `to?`, `q?`, `maxResults?` |
+| GET | `/google-calendar/upcoming` | JWT + Office | query: `limit?` |
+| DELETE | `/google-calendar/disconnect` | JWT + Office | nada |
+| GET | `/google-calendar/oauth/callback` | publica | query Google OAuth (`code`, `state`, `error`) |
+
 ### Trello
 
 | Metodo | Endpoint | Auth | Recebe |

@@ -26,6 +26,7 @@ model User {
 
   memberships GroupMember[]
   offices      UserOffice[]
+  googleCalendarConnections GoogleCalendarConnection[]
 }
 
 enum UserRole {
@@ -58,6 +59,7 @@ model Office {
   conversations Conversation[]
   settings      OfficeSettings[]
   members       UserOffice[]
+  googleCalendarConnections GoogleCalendarConnection[]
 
   createdAt DateTime @default(now())
 }
@@ -290,6 +292,29 @@ model Appointment {
 
   @@index([startAt, endAt])
   @@unique([officeId, externalSource, externalId])
+}
+
+model GoogleCalendarConnection {
+  id String @id @default(uuid())
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  officeId String
+  office   Office @relation(fields: [officeId], references: [id], onDelete: Cascade)
+
+  googleEmail String?
+  refreshToken String?
+  accessToken  String?
+  scope        String?
+  tokenType    String?
+  expiryDate   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, officeId])
+  @@index([officeId])
 }
 
 model ClientFile {
