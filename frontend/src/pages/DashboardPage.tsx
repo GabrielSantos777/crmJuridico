@@ -2,13 +2,8 @@ import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { CardMetric } from '@/components/CardMetric';
 import { UserPlus, Users, TrendingUp, DollarSign, CalendarClock } from 'lucide-react';
-import {
-  getGoogleCalendarStatus,
-  getMetrics,
-  listDeadlines,
-  listGoogleCalendarUpcoming,
-  listProcesses,
-} from '@/services/api';
+import { getMetrics, listDeadlines, listProcesses } from '@/services/api';
+import { isGoogleCalendarConnected, listGoogleCalendarUpcoming } from '@/services/googleCalendar';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -52,7 +47,7 @@ export default function DashboardPage() {
     estimatedRevenue: 0,
   });
   const [upcoming, setUpcoming] = useState<Upcoming[]>([]);
-  const [googleConnected, setGoogleConnected] = useState<boolean | null>(null);
+  const [googleConnected, setGoogleConnected] = useState<boolean>(false);
   const [recentProcesses, setRecentProcesses] = useState<any[]>([]);
   const [upcomingDeadlines, setUpcomingDeadlines] = useState<any[]>([]);
 
@@ -69,9 +64,8 @@ export default function DashboardPage() {
 
     const loadUpcoming = async () => {
       try {
-        const status = await getGoogleCalendarStatus();
+        const connected = isGoogleCalendarConnected();
         if (!active) return;
-        const connected = Boolean(status?.connected);
         setGoogleConnected(connected);
 
         if (!connected) {
@@ -80,7 +74,7 @@ export default function DashboardPage() {
         }
 
         const data = await listGoogleCalendarUpcoming(5);
-        if (active) setUpcoming(data);
+        if (active) setUpcoming(data as Upcoming[]);
       } catch {
         if (!active) return;
         setGoogleConnected(false);
@@ -117,6 +111,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const checkReminders = async () => {
+      if (!isGoogleCalendarConnected()) return;
+
       try {
         const items = await listGoogleCalendarUpcoming(20);
         const now = new Date();
@@ -187,9 +183,9 @@ export default function DashboardPage() {
           <div className="space-y-3">
             {upcoming.length === 0 ? (
               <div className="rounded-lg bg-secondary p-3 text-sm text-muted-foreground">
-                {googleConnected === false
-                  ? 'Conecte seu Google Calendar na Agenda para exibir eventos'
-                  : 'Nenhum evento agendado'}
+                {googleConnected
+                  ? 'Nenhum evento agendado'
+                  : 'Conecte seu Google Calendar na Agenda para exibir eventos'}
               </div>
             ) : (
               upcoming.map((e) => (

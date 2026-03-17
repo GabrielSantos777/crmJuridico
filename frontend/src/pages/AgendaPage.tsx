@@ -4,33 +4,17 @@ import { FormInput } from '@/components/FormInput';
 import { Calendar, Link as LinkIcon, RefreshCw, Unplug } from 'lucide-react';
 import { toast } from 'sonner';
 import {
+  connectGoogleCalendar,
   disconnectGoogleCalendar,
-  getGoogleCalendarAuthUrl,
-  getGoogleCalendarStatus,
+  getGoogleCalendarEmail,
+  isGoogleCalendarConnected,
   listGoogleCalendarEvents,
-} from '@/services/api';
+  type GoogleCalendarEvent,
+} from '@/services/googleCalendar';
 
 type GoogleCalendarStatus = {
   connected: boolean;
   googleEmail?: string | null;
-  expiresAt?: string | null;
-  connectedAt?: string | null;
-  hasRefreshToken?: boolean;
-};
-
-type GoogleCalendarEvent = {
-  id: string;
-  title: string;
-  description?: string | null;
-  location?: string | null;
-  status: 'confirmed' | 'tentative' | 'cancelled' | string;
-  htmlLink?: string | null;
-  startAt: string;
-  endAt?: string | null;
-  isAllDay: boolean;
-  organizerEmail?: string | null;
-  creatorEmail?: string | null;
-  source: 'GOOGLE';
 };
 
 const statusClass = (status: string) => {
@@ -90,7 +74,6 @@ const formatEventWhen = (event: GoogleCalendarEvent) => {
 export default function AgendaPage() {
   const [status, setStatus] = useState<GoogleCalendarStatus>({ connected: false });
   const [events, setEvents] = useState<GoogleCalendarEvent[]>([]);
-  const [loadingStatus, setLoadingStatus] = useState(true);
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [search, setSearch] = useState('');
@@ -106,45 +89,15 @@ export default function AgendaPage() {
     };
   });
 
-  const handleOAuthFeedback = () => {
-    const url = new URL(window.location.href);
-    const google = url.searchParams.get('google');
-    const reason = url.searchParams.get('reason');
-
-    if (google === 'connected') {
-      toast.success('Conta Google conectada com sucesso');
-    }
-
-    if (google === 'error') {
-      toast.error(reason ? `Falha ao conectar Google: ${reason}` : 'Falha ao conectar Google Calendar');
-    }
-
-    if (google) {
-      url.searchParams.delete('google');
-      url.searchParams.delete('reason');
-      window.history.replaceState({}, '', url.toString());
-    }
+  const loadStatus = () => {
+    const connected = isGoogleCalendarConnected();
+    const googleEmail = getGoogleCalendarEmail();
+    setStatus({ connected, googleEmail });
+    return connected;
   };
 
-  const loadStatus = async () => {
-    setLoadingStatus(true);
-    try {
-      const data = await getGoogleCalendarStatus();
-      setStatus(data);
-      return data;
-    } catch {
-      toast.error('Erro ao carregar conexao com Google Calendar');
-      const fallback = { connected: false } as GoogleCalendarStatus;
-      setStatus(fallback);
-      return fallback;
-    } finally {
-      setLoadingStatus(false);
-    }
-  };
-
-  const loadEvents = async (connectedOverride?: boolean) => {
-    const connected = connectedOverride ?? status.connected;
-    if (!connected) {
+  const loadEvents = async () => {
+    if (!status.connected) {
       setEvents([]);
       return;
     }
@@ -158,10 +111,11 @@ export default function AgendaPage() {
       });
       setEvents(Array.isArray(data) ? data : []);
     } catch (err: any) {
-      const message = String(err?.response?.data?.message ?? '');
-      if (message.toLowerCase().includes('nao conectada')) {
+      if (String(err?.message).includes('google_not_connected')) {
         setStatus({ connected: false });
         setEvents([]);
+        toast.error('Sua sessao Google expirou. Conecte novamente.');
+        return;
       }
       toast.error('Erro ao carregar eventos do Google Calendar');
     } finally {
@@ -169,16 +123,11 @@ export default function AgendaPage() {
     }
   };
 
-  const bootstrap = async () => {
-    handleOAuthFeedback();
-    const currentStatus = await loadStatus();
-    if (currentStatus.connected) {
-      await loadEvents(true);
-    }
-  };
-
   useEffect(() => {
-    bootstrap();
+    const connected = loadStatus();
+    if (connected) {
+      loadEvents();
+    }
   }, []);
 
   const filteredEvents = useMemo(() => {
@@ -199,19 +148,23 @@ export default function AgendaPage() {
   const handleConnect = async () => {
     setConnecting(true);
     try {
-      const data = await getGoogleCalendarAuthUrl();
-      if (!data?.url) {
-        throw new Error('missing_auth_url');
+      const data = await connectGoogleCalendar();
+      setStatus(data);
+      toast.success('Conta Google conectada com sucesso');
+      await loadEvents();
+    } catch (err: any) {
+      if (String(err?.message).includes('missing_google_client_id')) {
+        toast.error('Configure VITE_GOOGLE_CLIENT_ID no frontend');
+      } else {
+        toast.error('Nao foi possivel conectar com Google Calendar');
       }
-      window.location.href = data.url;
-    } catch {
-      toast.error('Nao foi possivel iniciar conexao com Google Calendar');
+    } finally {
       setConnecting(false);
     }
   };
 
   const handleDisconnect = async () => {
-    const ok = window.confirm('Deseja desconectar sua conta Google Calendar deste usuario?');
+    const ok = window.confirm('Deseja desconectar sua conta Google Calendar deste navegador?');
     if (!ok) return;
 
     try {
@@ -231,7 +184,7 @@ export default function AgendaPage() {
           <div>
             <h3 className="text-base font-semibold text-card-foreground">Google Calendar</h3>
             <p className="text-sm text-muted-foreground">
-              A agenda agora e exibida direto da sua conta Google conectada.
+              Clique em conectar e veja os eventos reais da sua conta Google.
             </p>
             {status.connected && (
               <p className="mt-1 text-xs text-muted-foreground">
@@ -268,7 +221,7 @@ export default function AgendaPage() {
             ) : (
               <button
                 onClick={handleConnect}
-                disabled={connecting || loadingStatus}
+                disabled={connecting}
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
               >
                 <Calendar className="h-4 w-4" /> {connecting ? 'Conectando...' : 'Conectar Google Calendar'}
@@ -314,7 +267,7 @@ export default function AgendaPage() {
 
       {!status.connected ? (
         <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
-          Conecte sua conta Google para visualizar os eventos reais da sua agenda.
+          Conecte sua conta Google para visualizar os eventos da sua agenda.
         </div>
       ) : loadingEvents ? (
         <div className="flex h-48 items-center justify-center">
