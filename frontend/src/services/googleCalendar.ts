@@ -1,18 +1,13 @@
-﻿const GOOGLE_TOKEN_KEY = 'google_calendar_access_token';
-const GOOGLE_TOKEN_EXPIRES_AT_KEY = 'google_calendar_access_token_expires_at';
-const GOOGLE_EMAIL_KEY = 'google_calendar_email';
-
-const GOOGLE_CALENDAR_SCOPE = [
-  'https://www.googleapis.com/auth/calendar.events',
-  'https://www.googleapis.com/auth/userinfo.email',
-].join(' ');
-
-type GoogleTokenResponse = {
-  access_token?: string;
-  expires_in?: number;
-  error?: string;
-  error_description?: string;
-};
+import {
+  createGoogleCalendarEvent as createGoogleCalendarEventApi,
+  deleteGoogleCalendarEvent as deleteGoogleCalendarEventApi,
+  disconnectGoogleCalendar as disconnectGoogleCalendarApi,
+  getGoogleCalendarAuthUrl,
+  getGoogleCalendarStatus as getGoogleCalendarStatusApi,
+  listGoogleCalendarEvents as listGoogleCalendarEventsApi,
+  listGoogleCalendarUpcoming as listGoogleCalendarUpcomingApi,
+  updateGoogleCalendarEvent as updateGoogleCalendarEventApi,
+} from './api';
 
 export type GoogleCalendarEvent = {
   id: string;
@@ -32,6 +27,10 @@ export type GoogleCalendarEvent = {
 export type GoogleCalendarStatus = {
   connected: boolean;
   googleEmail?: string | null;
+  expiresAt?: string | null;
+  connectedAt?: string | null;
+  hasRefreshToken?: boolean;
+  connectedByUserId?: string | null;
 };
 
 export type CreateGoogleCalendarEventInput = {
@@ -50,261 +49,77 @@ export type UpdateGoogleCalendarEventInput = {
   endAt: string;
 };
 
-declare global {
-  interface Window {
-    google?: any;
-  }
-}
-
-let gisLoader: Promise<void> | null = null;
-
-const getClientId = () => (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID?.trim();
-
-const getStoredToken = () => localStorage.getItem(GOOGLE_TOKEN_KEY);
-const getStoredExpiresAt = () => Number(localStorage.getItem(GOOGLE_TOKEN_EXPIRES_AT_KEY) || 0);
-
-const saveToken = (accessToken: string, expiresInSec: number) => {
-  const expiresAt = Date.now() + Math.max(1, expiresInSec - 30) * 1000;
-  localStorage.setItem(GOOGLE_TOKEN_KEY, accessToken);
-  localStorage.setItem(GOOGLE_TOKEN_EXPIRES_AT_KEY, String(expiresAt));
+const extractErrorText = (error: any) => {
+  const responseMessage = error?.response?.data?.message;
+  if (Array.isArray(responseMessage)) return responseMessage.join(' ');
+  if (typeof responseMessage === 'string') return responseMessage;
+  return String(error?.message || '');
 };
 
-const clearStoredAuth = () => {
-  localStorage.removeItem(GOOGLE_TOKEN_KEY);
-  localStorage.removeItem(GOOGLE_TOKEN_EXPIRES_AT_KEY);
-  localStorage.removeItem(GOOGLE_EMAIL_KEY);
+const isNotConnectedError = (error: any) => {
+  const status = Number(error?.response?.status || 0);
+  const message = extractErrorText(error).toLowerCase();
+
+  return (
+    status === 400 ||
+    status === 401 ||
+    status === 403 ||
+    message.includes('nao conectada') ||
+    message.includes('expirou') ||
+    message.includes('reconecte')
+  );
 };
 
-const hasValidToken = () => {
-  const token = getStoredToken();
-  if (!token) return false;
-  return getStoredExpiresAt() > Date.now();
-};
-
-const isAuthErrorStatus = (status: number) => status === 401 || status === 403;
-
-const ensureConfigured = () => {
-  if (!getClientId()) {
-    throw new Error('missing_google_client_id');
-  }
-};
-
-const loadGoogleScript = async () => {
-  if (window.google?.accounts?.oauth2) {
-    return;
-  }
-
-  if (!gisLoader) {
-    gisLoader = new Promise<void>((resolve, reject) => {
-      const existing = document.querySelector('script[data-google-gsi="1"]');
-      if (existing) {
-        existing.addEventListener('load', () => resolve(), { once: true });
-        existing.addEventListener('error', () => reject(new Error('google_script_load_error')), {
-          once: true,
-        });
-        return;
-      }
-
-      const script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
-      script.async = true;
-      script.defer = true;
-      script.dataset.googleGsi = '1';
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error('google_script_load_error'));
-      document.head.appendChild(script);
-    });
-  }
-
-  await gisLoader;
-};
-
-const requestToken = async (mode: 'silent' | 'consent' | 'select_account') => {
-  ensureConfigured();
-  await loadGoogleScript();
-
-  return new Promise<{ accessToken: string; expiresIn: number }>((resolve, reject) => {
-    const client = window.google.accounts.oauth2.initTokenClient({
-      client_id: getClientId(),
-      scope: GOOGLE_CALENDAR_SCOPE,
-      callback: (response: GoogleTokenResponse) => {
-        if (response?.error || !response?.access_token) {
-          reject(new Error(response?.error_description || response?.error || 'google_token_error'));
-          return;
-        }
-
-        resolve({
-          accessToken: response.access_token,
-          expiresIn: response.expires_in ?? 3600,
-        });
-      },
-    });
-
-    const prompt =
-      mode === 'silent' ? 'none' : mode === 'select_account' ? 'select_account consent' : 'consent';
-
-    client.requestAccessToken({ prompt });
-  });
-};
-
-const fetchGoogleEmail = async (accessToken: string) => {
-  const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  if (!response.ok) return null;
-  const data = await response.json();
-  return typeof data?.email === 'string' ? data.email : null;
-};
-
-const ensureEmail = async (accessToken: string) => {
-  const cachedEmail = localStorage.getItem(GOOGLE_EMAIL_KEY);
-  if (cachedEmail) return cachedEmail;
-
-  const email = await fetchGoogleEmail(accessToken);
-  if (email) {
-    localStorage.setItem(GOOGLE_EMAIL_KEY, email);
-  }
-  return email;
-};
-
-const ensureAccessToken = async (interactive: boolean, forceRefresh = false) => {
-  if (!forceRefresh && hasValidToken()) {
-    return getStoredToken() as string;
-  }
-
-  try {
-    const token = await requestToken(interactive ? 'consent' : 'silent');
-    saveToken(token.accessToken, token.expiresIn);
-    return token.accessToken;
-  } catch {
-    if (!interactive) {
-      return null;
-    }
-    throw new Error('google_token_error');
-  }
-};
-
-const withAuthHeaders = (headers: HeadersInit | undefined, accessToken: string) => {
-  const nextHeaders = new Headers(headers || {});
-  nextHeaders.set('Authorization', `Bearer ${accessToken}`);
-  return nextHeaders;
-};
-
-const fetchWithAuthRetry = async (
-  input: RequestInfo | URL,
-  init: RequestInit,
-  options?: {
-    interactiveAuth?: boolean;
-    allowNotFound?: boolean;
-  },
-) => {
-  const doRequest = async (accessToken: string) =>
-    fetch(input, {
-      ...init,
-      headers: withAuthHeaders(init.headers, accessToken),
-    });
-
-  const accessToken = await ensureAccessToken(Boolean(options?.interactiveAuth));
-  if (!accessToken) {
+const throwNormalizedGoogleError = (error: any, fallback: string) => {
+  if (isNotConnectedError(error)) {
     throw new Error('google_not_connected');
   }
-
-  let response = await doRequest(accessToken);
-
-  if (isAuthErrorStatus(response.status)) {
-    const refreshedToken = await ensureAccessToken(false, true);
-    if (refreshedToken) {
-      response = await doRequest(refreshedToken);
-    }
-  }
-
-  if (options?.allowNotFound && response.status === 404) {
-    return response;
-  }
-
-  if (isAuthErrorStatus(response.status)) {
-    clearStoredAuth();
-    throw new Error('google_not_connected');
-  }
-
-  return response;
+  throw new Error(fallback);
 };
 
-const mapEvent = (item: any): GoogleCalendarEvent => {
-  const startAt = item?.start?.dateTime ?? item?.start?.date ?? '';
-  const endAt = item?.end?.dateTime ?? item?.end?.date ?? null;
-  const isAllDay = Boolean(item?.start?.date && !item?.start?.dateTime);
-
-  return {
-    id: item?.id ?? crypto.randomUUID(),
-    title: item?.summary ?? '(Sem titulo)',
-    description: item?.description ?? null,
-    location: item?.location ?? null,
-    status: item?.status ?? 'confirmed',
-    htmlLink: item?.htmlLink ?? null,
-    startAt,
-    endAt,
-    isAllDay,
-    organizerEmail: item?.organizer?.email ?? null,
-    creatorEmail: item?.creator?.email ?? null,
-    source: 'GOOGLE',
-  };
+export const isGoogleCalendarConnected = async () => {
+  const status = await getGoogleCalendarStatus();
+  return Boolean(status.connected);
 };
 
-export const isGoogleCalendarConnected = () => hasValidToken();
-
-export const getGoogleCalendarEmail = () => localStorage.getItem(GOOGLE_EMAIL_KEY);
+export const getGoogleCalendarEmail = async () => {
+  const status = await getGoogleCalendarStatus();
+  return status.googleEmail || null;
+};
 
 export const getGoogleCalendarStatus = async (): Promise<GoogleCalendarStatus> => {
-  const accessToken = await ensureAccessToken(false);
-  if (!accessToken) {
-    return { connected: false, googleEmail: null };
+  try {
+    const data = await getGoogleCalendarStatusApi();
+    return {
+      connected: Boolean(data?.connected),
+      googleEmail: data?.googleEmail ?? null,
+      expiresAt: data?.expiresAt ?? null,
+      connectedAt: data?.connectedAt ?? null,
+      hasRefreshToken: Boolean(data?.hasRefreshToken),
+      connectedByUserId: data?.connectedByUserId ?? null,
+    };
+  } catch (error: any) {
+    if (isNotConnectedError(error)) {
+      return { connected: false, googleEmail: null };
+    }
+    throw error;
   }
-
-  const email = await ensureEmail(accessToken);
-  return {
-    connected: true,
-    googleEmail: email,
-  };
 };
 
 export const connectGoogleCalendar = async () => {
-  const token = await requestToken('select_account');
-  saveToken(token.accessToken, token.expiresIn);
+  const data = await getGoogleCalendarAuthUrl();
+  const targetUrl = String(data?.url || '').trim();
 
-  const email = await fetchGoogleEmail(token.accessToken);
-  if (email) {
-    localStorage.setItem(GOOGLE_EMAIL_KEY, email);
-  } else {
-    localStorage.removeItem(GOOGLE_EMAIL_KEY);
+  if (!targetUrl) {
+    throw new Error('google_auth_url_missing');
   }
 
-  return {
-    connected: true,
-    googleEmail: email,
-  } as GoogleCalendarStatus;
+  window.location.assign(targetUrl);
+  return { connected: false } as GoogleCalendarStatus;
 };
 
 export const disconnectGoogleCalendar = async () => {
-  const accessToken = getStoredToken();
-  clearStoredAuth();
-
-  if (!accessToken) return;
-
-  try {
-    await fetch('https://oauth2.googleapis.com/revoke', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: `token=${encodeURIComponent(accessToken)}`,
-    });
-  } catch {
-    // ignore revoke failure
-  }
+  return disconnectGoogleCalendarApi();
 };
 
 export const listGoogleCalendarEvents = async (params?: {
@@ -314,129 +129,55 @@ export const listGoogleCalendarEvents = async (params?: {
   maxResults?: number;
   interactiveAuth?: boolean;
 }) => {
-  const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
-  url.searchParams.set('singleEvents', 'true');
-  url.searchParams.set('orderBy', 'startTime');
-  url.searchParams.set('showDeleted', 'false');
-  url.searchParams.set('maxResults', String(Math.max(1, Math.min(params?.maxResults ?? 100, 2500))));
-  url.searchParams.set('timeMin', params?.from ?? new Date().toISOString());
-
-  if (params?.to) {
-    url.searchParams.set('timeMax', params.to);
+  try {
+    return await listGoogleCalendarEventsApi({
+      from: params?.from,
+      to: params?.to,
+      q: params?.q,
+      maxResults: params?.maxResults,
+    });
+  } catch (error: any) {
+    throwNormalizedGoogleError(error, 'google_calendar_fetch_error');
   }
-  if (params?.q?.trim()) {
-    url.searchParams.set('q', params.q.trim());
-  }
-
-  const response = await fetchWithAuthRetry(
-    url.toString(),
-    {
-      method: 'GET',
-    },
-    { interactiveAuth: Boolean(params?.interactiveAuth) },
-  );
-
-  if (!response.ok) {
-    throw new Error('google_calendar_fetch_error');
-  }
-
-  const data = await response.json();
-  const items = Array.isArray(data?.items) ? data.items : [];
-  return items.map(mapEvent);
 };
 
 export const createGoogleCalendarEvent = async (payload: CreateGoogleCalendarEventInput) => {
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-  const response = await fetchWithAuthRetry(
-    'https://www.googleapis.com/calendar/v3/calendars/primary/events',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        summary: payload.title,
-        description: payload.description || undefined,
-        location: payload.location || undefined,
-        start: {
-          dateTime: payload.startAt,
-          timeZone: timezone,
-        },
-        end: {
-          dateTime: payload.endAt,
-          timeZone: timezone,
-        },
-      }),
-    },
-    { interactiveAuth: true },
-  );
-
-  if (!response.ok) {
-    throw new Error('google_calendar_create_error');
+  try {
+    return await createGoogleCalendarEventApi({
+      ...payload,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo',
+    });
+  } catch (error: any) {
+    throwNormalizedGoogleError(error, 'google_calendar_create_error');
   }
-
-  const data = await response.json();
-  return mapEvent(data);
 };
 
 export const updateGoogleCalendarEvent = async (
   eventId: string,
   payload: UpdateGoogleCalendarEventInput,
 ) => {
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-  const response = await fetchWithAuthRetry(
-    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`,
-    {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        summary: payload.title,
-        description: payload.description || undefined,
-        location: payload.location || undefined,
-        start: {
-          dateTime: payload.startAt,
-          timeZone: timezone,
-        },
-        end: {
-          dateTime: payload.endAt,
-          timeZone: timezone,
-        },
-      }),
-    },
-    { interactiveAuth: true },
-  );
-
-  if (!response.ok) {
-    throw new Error('google_calendar_update_error');
+  try {
+    return await updateGoogleCalendarEventApi(eventId, {
+      ...payload,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo',
+    });
+  } catch (error: any) {
+    throwNormalizedGoogleError(error, 'google_calendar_update_error');
   }
-
-  const data = await response.json();
-  return mapEvent(data);
 };
 
 export const deleteGoogleCalendarEvent = async (eventId: string) => {
-  const response = await fetchWithAuthRetry(
-    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`,
-    {
-      method: 'DELETE',
-    },
-    { interactiveAuth: true, allowNotFound: true },
-  );
-
-  if (!response.ok && response.status !== 404) {
-    throw new Error('google_calendar_delete_error');
+  try {
+    return await deleteGoogleCalendarEventApi(eventId);
+  } catch (error: any) {
+    throwNormalizedGoogleError(error, 'google_calendar_delete_error');
   }
 };
 
 export const listGoogleCalendarUpcoming = async (limit = 5) => {
-  return listGoogleCalendarEvents({
-    from: new Date().toISOString(),
-    maxResults: Math.max(1, Math.min(limit, 50)),
-    interactiveAuth: false,
-  });
+  try {
+    return await listGoogleCalendarUpcomingApi(limit);
+  } catch (error: any) {
+    throwNormalizedGoogleError(error, 'google_calendar_fetch_error');
+  }
 };
-

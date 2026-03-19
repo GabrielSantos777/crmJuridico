@@ -223,6 +223,24 @@ export default function AgendaPage() {
 
   useEffect(() => {
     let active = true;
+    const params = new URLSearchParams(window.location.search);
+    const googleStatus = params.get('google');
+    const reason = params.get('reason');
+
+    if (googleStatus === 'connected') {
+      toast.success('Agenda do escritorio conectada com Google');
+    } else if (googleStatus === 'error') {
+      const reasonText = reason ? ` (${reason})` : '';
+      toast.error(`Falha ao conectar conta Google${reasonText}`);
+    }
+
+    if (googleStatus) {
+      params.delete('google');
+      params.delete('reason');
+      const query = params.toString();
+      const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}`;
+      window.history.replaceState({}, '', nextUrl);
+    }
 
     const loadStatus = async () => {
       try {
@@ -290,29 +308,27 @@ export default function AgendaPage() {
   const handleConnect = async () => {
     setConnecting(true);
     try {
-      const data = await connectGoogleCalendar();
-      setStatus(data);
-      setReloadKey((prev) => prev + 1);
-      toast.success('Conta Google conectada');
+      await connectGoogleCalendar();
+      toast('Redirecionando para conectar a conta do escritorio...');
     } catch (err: any) {
-      if (String(err?.message).includes('missing_google_client_id')) {
-        toast.error('Configure VITE_GOOGLE_CLIENT_ID no frontend');
-      } else {
-        toast.error('Nao foi possivel conectar com Google Calendar');
-      }
+      toast.error('Nao foi possivel iniciar a conexao com Google Calendar');
     } finally {
       setConnecting(false);
     }
   };
 
   const handleDisconnect = async () => {
-    const ok = window.confirm('Deseja desconectar a conta Google deste navegador?');
+    const ok = window.confirm('Deseja desconectar a conta Google deste escritorio?');
     if (!ok) return;
 
-    await disconnectGoogleCalendar();
-    setStatus({ connected: false });
-    setEvents([]);
-    toast.success('Conta Google desconectada');
+    try {
+      await disconnectGoogleCalendar();
+      setStatus({ connected: false });
+      setEvents([]);
+      toast.success('Conta Google do escritorio desconectada');
+    } catch {
+      toast.error('Nao foi possivel desconectar a conta Google');
+    }
   };
 
   const handleCreateEvent = async () => {
@@ -470,7 +486,7 @@ export default function AgendaPage() {
             </button>
 
             <div className="space-y-2 rounded-xl border border-border bg-background p-4 dark:border-slate-800 dark:bg-[#141922]">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground dark:text-slate-400">Conta Google</p>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground dark:text-slate-400">Conta Google do escritorio</p>
               {status.connected ? (
                 <>
                   <p className="text-sm text-foreground dark:text-slate-200">{status.googleEmail || 'Conectada'}</p>
@@ -495,7 +511,7 @@ export default function AgendaPage() {
                   disabled={connecting}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-accent disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800"
                 >
-                  <Calendar className="h-3.5 w-3.5" /> {connecting ? 'Conectando...' : 'Conectar conta'}
+                  <Calendar className="h-3.5 w-3.5" /> {connecting ? 'Conectando...' : 'Conectar conta do escritorio'}
                 </button>
               )}
             </div>
@@ -603,7 +619,7 @@ export default function AgendaPage() {
 
             {!status.connected ? (
               <div className="flex h-[520px] items-center justify-center rounded-2xl border border-border bg-card text-sm text-muted-foreground dark:border-slate-800 dark:bg-[#141922] dark:text-slate-400">
-                Conecte sua conta Google para visualizar e criar eventos.
+                Conecte a conta Google do escritorio para visualizar e criar eventos.
               </div>
             ) : loadingEvents ? (
               <div className="flex h-[520px] items-center justify-center rounded-2xl border border-border bg-card dark:border-slate-800 dark:bg-[#141922]">

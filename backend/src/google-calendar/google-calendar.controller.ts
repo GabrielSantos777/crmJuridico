@@ -1,7 +1,11 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
+  Param,
+  Patch,
+  Post,
   Query,
   Request,
   Res,
@@ -19,13 +23,13 @@ export class GoogleCalendarController {
   @Get('auth-url')
   @UseGuards(JwtAuthGuard, OfficeGuard)
   getAuthUrl(@Request() req) {
-    return this.googleCalendarService.getAuthUrl(req.user.userId, req.user.officeId);
+    return this.googleCalendarService.getAuthUrl(req.user.officeId, req.user.userId);
   }
 
   @Get('status')
   @UseGuards(JwtAuthGuard, OfficeGuard)
   status(@Request() req) {
-    return this.googleCalendarService.getStatus(req.user.userId, req.user.officeId);
+    return this.googleCalendarService.getStatus(req.user.officeId);
   }
 
   @Get('events')
@@ -38,7 +42,6 @@ export class GoogleCalendarController {
     @Query('maxResults') maxResults?: string,
   ) {
     return this.googleCalendarService.listEvents({
-      userId: req.user.userId,
       officeId: req.user.officeId,
       from,
       to,
@@ -50,17 +53,54 @@ export class GoogleCalendarController {
   @Get('upcoming')
   @UseGuards(JwtAuthGuard, OfficeGuard)
   upcoming(@Request() req, @Query('limit') limit?: string) {
-    return this.googleCalendarService.upcoming(
-      req.user.userId,
-      req.user.officeId,
-      limit ? Number(limit) : 5,
-    );
+    return this.googleCalendarService.upcoming(req.user.officeId, limit ? Number(limit) : 5);
+  }
+
+  @Post('events')
+  @UseGuards(JwtAuthGuard, OfficeGuard)
+  createEvent(
+    @Request() req,
+    @Body()
+    body: {
+      title: string;
+      description?: string;
+      location?: string;
+      startAt: string;
+      endAt: string;
+      timeZone?: string;
+    },
+  ) {
+    return this.googleCalendarService.createEvent(req.user.officeId, body);
+  }
+
+  @Patch('events/:eventId')
+  @UseGuards(JwtAuthGuard, OfficeGuard)
+  updateEvent(
+    @Request() req,
+    @Param('eventId') eventId: string,
+    @Body()
+    body: {
+      title: string;
+      description?: string;
+      location?: string;
+      startAt: string;
+      endAt: string;
+      timeZone?: string;
+    },
+  ) {
+    return this.googleCalendarService.updateEvent(req.user.officeId, eventId, body);
+  }
+
+  @Delete('events/:eventId')
+  @UseGuards(JwtAuthGuard, OfficeGuard)
+  deleteEvent(@Request() req, @Param('eventId') eventId: string) {
+    return this.googleCalendarService.deleteEvent(req.user.officeId, eventId);
   }
 
   @Delete('disconnect')
   @UseGuards(JwtAuthGuard, OfficeGuard)
   disconnect(@Request() req) {
-    return this.googleCalendarService.disconnect(req.user.userId, req.user.officeId);
+    return this.googleCalendarService.disconnect(req.user.officeId);
   }
 
   @Get('oauth/callback')

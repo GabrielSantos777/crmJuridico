@@ -300,7 +300,7 @@ model GoogleCalendarConnection {
   userId String
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  officeId String
+  officeId String @unique
   office   Office @relation(fields: [officeId], references: [id], onDelete: Cascade)
 
   googleEmail String?
@@ -313,8 +313,7 @@ model GoogleCalendarConnection {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([userId, officeId])
-  @@index([officeId])
+  @@index([userId])
 }
 
 model ClientFile {

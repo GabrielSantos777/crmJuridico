@@ -67,6 +67,18 @@ export class IntegrationsController {
     return this.integrationsService.getLatestProcessUpdateByPhone(phone, resolved);
   }
 
+  @Get('process/summaries-by-client')
+  summariesByClient(@Query('clientCode') clientCode: string, @Query('officeId') officeId: string, @Headers('x-office-id') headerOfficeId?: string) {
+    const resolved = this.resolveOfficeId(headerOfficeId, undefined, officeId);
+    return this.integrationsService.getProcessSummariesByClientCode(clientCode, resolved);
+  }
+
+  @Get('process/summaries-by-phone')
+  summariesByPhone(@Query('phone') phone: string, @Query('officeId') officeId: string, @Headers('x-office-id') headerOfficeId?: string) {
+    const resolved = this.resolveOfficeId(headerOfficeId, undefined, officeId);
+    return this.integrationsService.getProcessSummariesByPhone(phone, resolved);
+  }
+
   @Get('appointments/availability')
   availability(
     @Query('officeId') officeId?: string,

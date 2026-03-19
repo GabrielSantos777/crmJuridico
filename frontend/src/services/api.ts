@@ -193,6 +193,38 @@ export async function listGoogleCalendarUpcoming(limit = 5) {
   return data;
 }
 
+export async function createGoogleCalendarEvent(payload: {
+  title: string;
+  description?: string;
+  location?: string;
+  startAt: string;
+  endAt: string;
+  timeZone?: string;
+}) {
+  const { data } = await api.post('/google-calendar/events', payload);
+  return data;
+}
+
+export async function updateGoogleCalendarEvent(
+  eventId: string,
+  payload: {
+    title: string;
+    description?: string;
+    location?: string;
+    startAt: string;
+    endAt: string;
+    timeZone?: string;
+  },
+) {
+  const { data } = await api.patch(`/google-calendar/events/${encodeURIComponent(eventId)}`, payload);
+  return data;
+}
+
+export async function deleteGoogleCalendarEvent(eventId: string) {
+  const { data } = await api.delete(`/google-calendar/events/${encodeURIComponent(eventId)}`);
+  return data;
+}
+
 export async function disconnectGoogleCalendar() {
   const { data } = await api.delete('/google-calendar/disconnect');
   return data;
@@ -205,6 +237,25 @@ export async function listProcesses() {
 
 export async function importProcess(number: string, clientCode: string) {
   const { data } = await api.post("/processes/import", { number, clientCode });
+  return data;
+}
+
+export async function searchProcessesByOab(oab: string) {
+  const { data } = await api.get('/processes/search/oab', { params: { value: oab } });
+  return data;
+}
+
+export async function importProcessesByOab(payload: {
+  oab: string;
+  clientCode: string;
+  limit?: number;
+}) {
+  const { data } = await api.post('/processes/import/oab', payload);
+  return data;
+}
+
+export async function getClientProcessSummary(clientCode: string) {
+  const { data } = await api.get(`/processes/client/${encodeURIComponent(clientCode)}/summary`);
   return data;
 }
 

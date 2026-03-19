@@ -188,12 +188,57 @@ export class IntegrationsService {
     };
   }
 
+  async getProcessSummariesByClientCode(code: string, officeId: string) {
+    officeId = this.requireOfficeId(officeId);
+
+    const processes = await this.prisma.process.findMany({
+      where: { client: { code }, officeId },
+      include: {
+        client: true,
+        events: {
+          orderBy: { date: 'desc' },
+          take: 5,
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    return {
+      total: processes.length,
+      processes: processes.map((process) => ({
+        id: process.id,
+        code: process.code,
+        number: process.number,
+        title: process.title,
+        area: process.area,
+        status: process.status,
+        client: {
+          id: process.client.id,
+          code: process.client.code,
+          name: process.client.name,
+        },
+        latestEvent: process.events[0] ?? null,
+        latestMovementSummary:
+          process.events[0]?.description ?? 'Sem movimentacoes recentes',
+        recentEvents: process.events,
+      })),
+    };
+  }
+
   async getLatestProcessUpdateByPhone(phone: string, officeId: string) {
     officeId = this.requireOfficeId(officeId);
     const existing = await this.findClientOrLeadByPhone(phone, officeId);
     if (!existing || existing.type !== 'client') return null;
 
     return this.getLatestProcessUpdateByClientCode(existing.record.code, officeId);
+  }
+
+  async getProcessSummariesByPhone(phone: string, officeId: string) {
+    officeId = this.requireOfficeId(officeId);
+    const existing = await this.findClientOrLeadByPhone(phone, officeId);
+    if (!existing || existing.type !== 'client') return null;
+
+    return this.getProcessSummariesByClientCode(existing.record.code, officeId);
   }
 
   async listAvailability(params: {

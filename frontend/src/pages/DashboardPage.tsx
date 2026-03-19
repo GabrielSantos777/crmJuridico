@@ -188,7 +188,7 @@ export default function DashboardPage() {
               <div className="rounded-lg bg-secondary p-3 text-sm text-muted-foreground">
                 {googleConnected
                   ? 'Nenhum evento agendado'
-                  : 'Conecte seu Google Calendar na Agenda para exibir eventos'}
+                  : 'Conecte a conta Google do escritorio na Agenda para exibir eventos'}
               </div>
             ) : (
               upcoming.map((e) => (

@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Param, Get, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Body, Param, Get, UseGuards, Request, Query } from '@nestjs/common';
 import { ProcessesService } from './processes.service';
 import { JwtAuthGuard } from '../auth/jwt.guard';
 import { OfficeGuard } from '../auth/office.guard';
@@ -35,6 +35,29 @@ export class ProcessesController {
   @Post('import')
   importFromCnj(@Body() body: { number: string; clientCode: string }, @Request() req) {
     return this.processesService.importFromCNJ(body.number, body.clientCode, req.user.officeId);
+  }
+
+  @Get('search/oab')
+  searchByOab(@Query('value') oab: string, @Request() req) {
+    return this.processesService.searchByOab(oab, req.user.officeId);
+  }
+
+  @Post('import/oab')
+  importByOab(
+    @Body() body: { oab: string; clientCode: string; limit?: number },
+    @Request() req,
+  ) {
+    return this.processesService.importByOab(
+      body.oab,
+      body.clientCode,
+      req.user.officeId,
+      body.limit,
+    );
+  }
+
+  @Get('client/:clientCode/summary')
+  findByClientCode(@Param('clientCode') clientCode: string, @Request() req) {
+    return this.processesService.findByClientCode(clientCode, req.user.officeId);
   }
 
   @Get(':code')

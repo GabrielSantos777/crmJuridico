@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import axios from 'axios';
@@ -18,8 +19,8 @@ type GoogleOAuthToken = {
 };
 
 type GoogleStatePayload = {
-  userId: string;
   officeId: string;
+  connectedByUserId: string;
   nonce: string;
 };
 
@@ -27,13 +28,13 @@ type GoogleStatePayload = {
 export class GoogleCalendarService {
   constructor(private prisma: PrismaService) {}
 
-  async getAuthUrl(userId: string, officeId: string) {
+  async getAuthUrl(officeId: string, connectedByUserId: string) {
     const { clientId, redirectUri } = this.getGoogleOAuthConfig();
 
     const state = jwt.sign(
       {
-        userId,
         officeId,
+        connectedByUserId,
         nonce: randomUUID(),
       } as GoogleStatePayload,
       this.getJwtSecret(),
@@ -41,7 +42,7 @@ export class GoogleCalendarService {
     );
 
     const scopes = [
-      'https://www.googleapis.com/auth/calendar.readonly',
+      'https://www.googleapis.com/auth/calendar.events',
       'https://www.googleapis.com/auth/userinfo.email',
     ];
 
@@ -81,7 +82,7 @@ export class GoogleCalendarService {
       return this.buildAgendaRedirect('error', 'invalid_state');
     }
 
-    if (!statePayload.userId || !statePayload.officeId) {
+    if (!statePayload.connectedByUserId || !statePayload.officeId) {
       return this.buildAgendaRedirect('error', 'invalid_state_payload');
     }
 
@@ -92,46 +93,57 @@ export class GoogleCalendarService {
         return this.buildAgendaRedirect('error', 'missing_access_token');
       }
 
-      const existing = await this.prisma.googleCalendarConnection.findUnique({
+      const existingConnections = await this.prisma.googleCalendarConnection.findMany({
         where: {
-          userId_officeId: {
-            userId: statePayload.userId,
-            officeId: statePayload.officeId,
-          },
+          officeId: statePayload.officeId,
         },
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
       });
 
-      const refreshToken = token.refresh_token ?? existing?.refreshToken ?? null;
+      const primaryConnection = existingConnections[0] ?? null;
+      const refreshToken = token.refresh_token ?? primaryConnection?.refreshToken ?? null;
       const googleEmail = await this.fetchGoogleUserEmail(token.access_token).catch(
-        () => existing?.googleEmail ?? null,
+        () => primaryConnection?.googleEmail ?? null,
       );
 
-      await this.prisma.googleCalendarConnection.upsert({
-        where: {
-          userId_officeId: {
-            userId: statePayload.userId,
+      if (primaryConnection) {
+        await this.prisma.googleCalendarConnection.update({
+          where: { id: primaryConnection.id },
+          data: {
+            userId: statePayload.connectedByUserId,
             officeId: statePayload.officeId,
+            googleEmail,
+            accessToken: token.access_token,
+            refreshToken,
+            scope: token.scope ?? null,
+            tokenType: token.token_type ?? null,
+            expiryDate: this.resolveExpiryDate(token.expires_in),
           },
-        },
-        create: {
-          userId: statePayload.userId,
-          officeId: statePayload.officeId,
-          googleEmail,
-          accessToken: token.access_token,
-          refreshToken,
-          scope: token.scope ?? null,
-          tokenType: token.token_type ?? null,
-          expiryDate: this.resolveExpiryDate(token.expires_in),
-        },
-        update: {
-          googleEmail,
-          accessToken: token.access_token,
-          refreshToken,
-          scope: token.scope ?? null,
-          tokenType: token.token_type ?? null,
-          expiryDate: this.resolveExpiryDate(token.expires_in),
-        },
-      });
+        });
+      } else {
+        await this.prisma.googleCalendarConnection.create({
+          data: {
+            userId: statePayload.connectedByUserId,
+            officeId: statePayload.officeId,
+            googleEmail,
+            accessToken: token.access_token,
+            refreshToken,
+            scope: token.scope ?? null,
+            tokenType: token.token_type ?? null,
+            expiryDate: this.resolveExpiryDate(token.expires_in),
+          },
+        });
+      }
+
+      if (existingConnections.length > 1) {
+        await this.prisma.googleCalendarConnection.deleteMany({
+          where: {
+            id: {
+              in: existingConnections.slice(1).map((item) => item.id),
+            },
+          },
+        });
+      }
     } catch {
       return this.buildAgendaRedirect('error', 'token_exchange_failed');
     }
@@ -139,9 +151,10 @@ export class GoogleCalendarService {
     return this.buildAgendaRedirect('connected');
   }
 
-  async getStatus(userId: string, officeId: string) {
-    const connection = await this.prisma.googleCalendarConnection.findUnique({
-      where: { userId_officeId: { userId, officeId } },
+  async getStatus(officeId: string) {
+    const connection = await this.prisma.googleCalendarConnection.findFirst({
+      where: { officeId },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
     });
 
     if (!connection) {
@@ -156,12 +169,13 @@ export class GoogleCalendarService {
       expiresAt: connection.expiryDate?.toISOString() ?? null,
       connectedAt: connection.createdAt.toISOString(),
       hasRefreshToken: Boolean(connection.refreshToken),
+      connectedByUserId: connection.userId,
     };
   }
 
-  async disconnect(userId: string, officeId: string) {
+  async disconnect(officeId: string) {
     await this.prisma.googleCalendarConnection.deleteMany({
-      where: { userId, officeId },
+      where: { officeId },
     });
     return {
       connected: false,
@@ -169,14 +183,13 @@ export class GoogleCalendarService {
   }
 
   async listEvents(params: {
-    userId: string;
     officeId: string;
     from?: string;
     to?: string;
     q?: string;
     maxResults?: number;
   }) {
-    const accessToken = await this.getAccessToken(params.userId, params.officeId);
+    const accessToken = await this.getAccessToken(params.officeId);
     const maxResults = this.clampMaxResults(params.maxResults);
     const timeMin = params.from ?? new Date().toISOString();
     const timeMax = params.to;
@@ -211,22 +224,146 @@ export class GoogleCalendarService {
     }
   }
 
-  async upcoming(userId: string, officeId: string, limit = 5) {
+  async upcoming(officeId: string, limit = 5) {
     return this.listEvents({
-      userId,
       officeId,
       from: new Date().toISOString(),
       maxResults: Math.max(1, Math.min(limit, 50)),
     });
   }
 
-  private async getAccessToken(userId: string, officeId: string) {
-    const connection = await this.prisma.googleCalendarConnection.findUnique({
-      where: { userId_officeId: { userId, officeId } },
+  async createEvent(
+    officeId: string,
+    payload: {
+      title: string;
+      description?: string;
+      location?: string;
+      startAt: string;
+      endAt: string;
+      timeZone?: string;
+    },
+  ) {
+    const accessToken = await this.getAccessToken(officeId);
+
+    try {
+      const response = await axios.post(
+        'https://www.googleapis.com/calendar/v3/calendars/primary/events',
+        {
+          summary: payload.title,
+          description: payload.description || undefined,
+          location: payload.location || undefined,
+          start: {
+            dateTime: payload.startAt,
+            timeZone: payload.timeZone || 'America/Sao_Paulo',
+          },
+          end: {
+            dateTime: payload.endAt,
+            timeZone: payload.timeZone || 'America/Sao_Paulo',
+          },
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      );
+
+      return this.mapGoogleEvent(response.data);
+    } catch (error: any) {
+      const status = error?.response?.status;
+      if (status === 401 || status === 403) {
+        throw new UnauthorizedException('Acesso ao Google Calendar expirou. Reconecte a conta do escritorio.');
+      }
+      throw new BadRequestException('Nao foi possivel criar evento no Google Calendar.');
+    }
+  }
+
+  async updateEvent(
+    officeId: string,
+    eventId: string,
+    payload: {
+      title: string;
+      description?: string;
+      location?: string;
+      startAt: string;
+      endAt: string;
+      timeZone?: string;
+    },
+  ) {
+    const accessToken = await this.getAccessToken(officeId);
+
+    try {
+      const response = await axios.patch(
+        `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`,
+        {
+          summary: payload.title,
+          description: payload.description || undefined,
+          location: payload.location || undefined,
+          start: {
+            dateTime: payload.startAt,
+            timeZone: payload.timeZone || 'America/Sao_Paulo',
+          },
+          end: {
+            dateTime: payload.endAt,
+            timeZone: payload.timeZone || 'America/Sao_Paulo',
+          },
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      );
+
+      return this.mapGoogleEvent(response.data);
+    } catch (error: any) {
+      const status = error?.response?.status;
+      if (status === 404) {
+        throw new NotFoundException('Evento nao encontrado no Google Calendar.');
+      }
+      if (status === 401 || status === 403) {
+        throw new UnauthorizedException('Acesso ao Google Calendar expirou. Reconecte a conta do escritorio.');
+      }
+      throw new BadRequestException('Nao foi possivel atualizar evento no Google Calendar.');
+    }
+  }
+
+  async deleteEvent(officeId: string, eventId: string) {
+    const accessToken = await this.getAccessToken(officeId);
+
+    try {
+      await axios.delete(
+        `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      );
+
+      return { deleted: true };
+    } catch (error: any) {
+      const status = error?.response?.status;
+      if (status === 404) {
+        return { deleted: true };
+      }
+      if (status === 401 || status === 403) {
+        throw new UnauthorizedException('Acesso ao Google Calendar expirou. Reconecte a conta do escritorio.');
+      }
+      throw new BadRequestException('Nao foi possivel excluir evento no Google Calendar.');
+    }
+  }
+
+  private async getAccessToken(officeId: string) {
+    const connections = await this.prisma.googleCalendarConnection.findMany({
+      where: { officeId },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+      take: 2,
     });
+    const connection = connections[0];
 
     if (!connection) {
-      throw new BadRequestException('Conta Google Calendar nao conectada');
+      throw new BadRequestException('Conta Google Calendar do escritorio nao conectada');
     }
 
     const now = Date.now();
@@ -236,11 +373,20 @@ export class GoogleCalendarService {
       (!expiresAt || expiresAt - now > 60_000);
 
     if (hasValidAccessToken) {
+      if (connections.length > 1) {
+        await this.prisma.googleCalendarConnection.deleteMany({
+          where: {
+            id: {
+              in: connections.slice(1).map((item) => item.id),
+            },
+          },
+        });
+      }
       return connection.accessToken as string;
     }
 
     if (!connection.refreshToken) {
-      throw new UnauthorizedException('Conexao Google expirada. Reconecte sua conta.');
+      throw new UnauthorizedException('Conexao Google expirada. Reconecte a conta do escritorio.');
     }
 
     const refreshed = await this.refreshAccessToken(connection.refreshToken);
@@ -259,6 +405,16 @@ export class GoogleCalendarService {
         expiryDate: this.resolveExpiryDate(refreshed.expires_in) ?? connection.expiryDate,
       },
     });
+
+    if (connections.length > 1) {
+      await this.prisma.googleCalendarConnection.deleteMany({
+        where: {
+          id: {
+            in: connections.slice(1).map((item) => item.id),
+          },
+        },
+      });
+    }
 
     return updated.accessToken as string;
   }
